@@ -269,9 +269,9 @@ test('[v2.2-OPT14-TC05-1] 权威文档、技能、README 与蓝图同步单轨�
     const header = (await readFile(path.join(REPO_ROOT, planPath), 'utf8')).split('\n').slice(0, 14).join('\n');
     assert.match(header, /07ef09d/, planPath);
     assert.match(header, /d463e90/, planPath);
-    assert.match(header, /待发布验收/, planPath);
-    assert.match(header, /当前推进 Phase 2\.5/, planPath);
-    assert.doesNotMatch(header, /Phase 2\.5 已完成|Phase 3 已完成/, planPath);
+    assert.match(header, /9be2aa9/, planPath);
+    assert.match(header, /Phase 3/, planPath);
+    assert.doesNotMatch(header, /当前推进 Phase 2\.5|均待发布验收|暂标「待发布验收」|Phase 3 尚未开始/, planPath);
   }
 });
 

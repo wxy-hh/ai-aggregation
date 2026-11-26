@@ -1,10 +1,10 @@
 # QA Workflow 联合审计优化计划与进度追踪（2026-11-22）
 
 > **生成时间**：2026-11-22
-> **最近更新**：2026-11-26（`v2.2` Phase 1 已落地 `07ef09d`、Phase 2 已落地 `d463e90`，均待发布验收；当前推进 Phase 2.5 `OPT-14`，继续执行 Phase 3 发布 dogfood 路线）
-> **来源**：主仓 Swarm 四路源码审计 + 外部独立仓架构审计双报告交叉核验（经 7 轮 `/grill-me` 决策收敛）+ 四特性真实业务复盘对抗审查（`ADR-0065`，经 5 轮 `/grill-me` 决策收敛）+ `.scratch/tools-workbench-ia-migration` 实跑复盘（经 8 轮 `/grill-me` 拍板）
-> **当前状态**：**`v2.2` Phase 1（`07ef09d`）与 Phase 2（`d463e90`）已落地提交，均待发布验收；当前推进 Phase 2.5（`.scratch/qa-workflow-v2-2-opt14/`，标准车道 `OPT-14`，尚未完成独立审查与人工终审）**；早期 Phase 1（`e4e9c0d`）、Phase 2（`9b51c32`）与 `v2.1 Batch 1`（`1b31f11`，`ADR-0065`）已落地；Step 0 已将 `/tools` 业务改动隔离至 `feat/tools-workbench-ia-migration`（`b8da019`），Phase 3 尚未开始。
-> **关联文档**：`docs/reports/qa-workflow-evolution-report.md`、`docs/plans/qa-workflow-backlog.md`、`docs/adr/0065-qa-workflow-v2-review-ergonomics.md`、`docs/reports/qa-wf-02-baseline-2026-11-25.md`、`docs/plans/2026-11-25-qa-workflow-v2-first-principles-redesign.md`、`docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`、`docs/plans/kimi-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`
+> **最近更新**：2026-11-26（`v2.2` 全周期已落地：Phase 1 `07ef09d` → Phase 2 `d463e90` → Phase 2.5 `9be2aa9`，且已完成 Phase 3 干净会话双对照发布 dogfood，正式摘除 `v2.2`「待发布验收」标注并关闭 `QA-WF-01`、`QA-WF-07`）
+> **来源**：主仓 Swarm 四路源码审计 + 外部独立仓架构审计双报告交叉核验（经 7 轮 `/grill-me` 决策收敛）+ 四特性真实业务复盘对抗审查（`ADR-0065`，经 5 轮 `/grill-me` 决策收敛）+ `.scratch/tools-workbench-ia-migration` 实跑复盘（经 8 轮 `/grill-me` 拍板）+ Phase 3 双对照发布验收（经 5 项 `/grill-me` 终审锁定）
+> **当前状态**：**`v2.2` 全周期（Phase 1 `07ef09d`、Phase 2 `d463e90`、Phase 2.5 `9be2aa9`）与 Phase 3 干净会话双对照发布验收已全部完成**——对照 A（`/tools` 迁移干净复验，首轮双轴 5.12m、总活跃 32.0m、Rename 压缩 91.13%、`gate-review-01` PASS）与对照 B（4 类变异盲测 `4/4` 阻断级独立检出并两轮闭环、`gate-review-01` PASS）双轨达标，已正式关闭 `QA-WF-01`、`QA-WF-05`、`QA-WF-07` 并摘除 `v2.2` 发布验收暂挂标注；早期 Phase 1（`e4e9c0d`）、Phase 2（`9b51c32`）与 `v2.1 Batch 1`（`1b31f11`，`ADR-0065`）已并入全链路验收；`/tools` 迁移业务改动完整保留于 `phase3/control-a` 供人工单独终审决定合入。
+> **关联文档**：`docs/reports/qa-workflow-evolution-report.md`、`docs/plans/qa-workflow-backlog.md`、`docs/adr/0065-qa-workflow-v2-review-ergonomics.md`、`docs/adr/0066-qa-workflow-v2-2-immutable-review-and-incremental-closure.md`、`docs/reports/qa-wf-02-baseline-2026-11-25.md`、`docs/plans/2026-11-25-qa-workflow-v2-first-principles-redesign.md`、`docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`、`docs/plans/kimi-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`
 
 ---
 
@@ -12,10 +12,10 @@
 
 | 状态分类 | 数量 | 编号范围 | 说明 |
 | --- | --- | --- | --- |
-| ✅ **已完成（Phase 1 + Phase 2）** | **13 项** | `OPT-01 ~ OPT-09`、`OPT-11`、`OPT-12`、`OPT-13`、`OPT-17`（部分） | 已落地提交 `e4e9c0d` + `9b51c32`，全量工具单测由 `361` 增至 `381/381` 全绿（`OPT-01` 已由用户确认删除本地脚本即可，无需轮换 `xkfy` 凭据） |
-| ✅ **已完成（v2.1 Batch 1，ADR-0065）** | **1 批 5 项** | `QA-WF-02` 基线 + Batch 1 四大改造与亲自复审 7 项补强 | 已落地提交 `1b31f11`，完成 `QA-WF-02` 四特性基线统计、`qa-preflight.mjs`、`seal` 同步阻断与四处误报修复、`QA Review Coverage: 2` + `±5` 行谓词封堵 `:1`、`qaArtifactsDigest` 双指纹免重跑与 Claude 0 子代理硬拦截（`398/398` 全绿，5 核心工具 + `qa-browser-helper.mjs` 与模板逐字节一致，保留「待发布验收」） |
+| ✅ **已完成（早期 Phase 1 + Phase 2）** | **13 项** | `OPT-01 ~ OPT-09`、`OPT-11`、`OPT-12`、`OPT-13`、`OPT-17`（部分） | 已落地提交 `e4e9c0d` + `9b51c32`，全量工具单测由 `361` 增至 `381/381` 全绿（`OPT-01` 已由用户确认删除本地脚本即可，无需轮换 `xkfy` 凭据） |
+| ✅ **已完成（v2.1 Batch 1，ADR-0065）** | **1 批 5 项** | `QA-WF-02` 基线 + Batch 1 四大改造与亲自复审 7 项补强 | 已落地提交 `1b31f11`，完成 `QA-WF-02` 四特性基线统计、`qa-preflight.mjs`、`seal` 同步阻断与四处误报修复、`QA Review Coverage: 2` + `±5` 行谓词封堵 `:1`、`qaArtifactsDigest` 双指纹免重跑与 Claude 0 子代理硬拦截（已随 `v2.2` Phase 3 完成发布验收） |
+| ✅ **已完成（`v2.2` 全周期 + `v2.1` 主仓残留全清零）** | **1 个前置 + 4 阶段** | Step 0（`b8da019`）→ Phase 1（`07ef09d`）→ Phase 2（`d463e90`）→ Phase 2.5（`9be2aa9`）→ Phase 3（双对照发布 dogfood） | 与 `docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md` 全量闭环，对照 A 效率轨与对照 B `4/4` 防线盲测双达标，已关闭 `QA-WF-01`、`QA-WF-05`、`QA-WF-07` 并正式摘标 |
 | ⏸️ **有意暂缓 / 明确排除（经 `/grill-me` 决策）** | **4 类** | `OPT-10`、`OPT-07`/`OPT-11` 局部、`Level A/B/C` 等暂缓项、快审/自动续传否决项 | 保持简洁边界与规则红线，未满足前置 ADR/安全条件或已明确否决 |
-| ⏳ **待做 · 合流总计划（`v2.2` + `v2.1` 主仓残留全清零）** | **1 个前置 + 4 阶段** | Step 0（已完成）→ Phase 1（`v2.2 Batch 0~2` + `OPT-15/17` + `ADR-0066`）→ Phase 2（`v2.2 Batch 3` + `/handoff` + 弹层预清理 + `OBS-1`）→ Phase 2.5（`OPT-14`）→ Phase 3（双对照发布 dogfood） | 与 `docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md` 同步锁板；先治本与解耦、后拆单体、最后双对照收口关闭 `QA-WF-01` |
 | 📦 **未做 · P3（仅限外部独立分发包仓库）** | **4 项** | `OPT-18 ~ OPT-21` | `AI-Aggregation` 主仓不适用或已解决，仅同步独立 `qa-workflow` 模板仓时执行 |
 
 ---
@@ -56,7 +56,7 @@
 | **v2.1-1** | 新增 1 秒确定性预检 `qa-preflight.mjs` 并挂载 `collect` | ✅ 已完成 | ERROR 拦截 `scripts/` 永真伪断言与交付命令不一致；WARN 列出 Diff 英文注释（屏蔽字符串）、非白名单色值（跳过单行注释）与交互按钮 `<44px`（跨行 JSX 开标签追踪）全量行号；支持 `--skip-preflight` 与 `--strict`。 |
 | **v2.1-2** | `seal` 同步阻断 + 四处误报修复 + 0 子代理硬拦截 | ✅ 已完成 | `qa-spec-review.mjs` 统一提供 `validateReviewReportForSeal` 在写 `.source.json` 前同步阻断；修复 `hasNoFinding` 中文否定、路径前缀剥离、`SYNTHETIC_INPUT` 只读诊断放行（含 `push` 与只读属性读取）及 `qa-run --script`（含 `--` 防劫持边界）；补齐 Claude Code 单轴/全轴 0 子代理 `REVIEW_PROVENANCE_UNVERIFIED`（`BLOCKED`）。 |
 | **v2.1-3** | `QA Review Coverage: 2` 分级对账 + `±5` 行谓词封堵 `:1` | ✅ 已完成 | `acceptance` 按风险标注 `required` 并生成 4 列预填骨架 `_qa/spec-review-skeleton.md`，存在常规项要求真实填写 `## 抽检范围`（禁止空标题或保留 `<请写出...>` 占位）；全版本 `citationIsValid` 校验前后 `±5` 行真实断言谓词与非零退出分支；完全兼容 `v1`。 |
-| **v2.1-4 & 复审补强** | `qaArtifactsDigest` 双指纹免重跑 + r3 后亲自复审 7 项补强 | ✅ 已完成（待发布验收） | `review-package.json` 增补 `qaArtifactsDigest` 堵住 `.scratch/` 盲区，双指纹未变免除 `VERIFICATION_BEFORE_REVIEW` 重跑，仅 QA 产物变化报 `STALE_QA_ARTIFACTS`；r1–r3 双轴独立闭环后补齐 7 项边界与 README/技能索引同步，**398/398 全绿**、模板逐字节一致，人工终审后本地提交 `1b31f11`；保留「待发布验收（干净会话 `/implement` dogfood）」。 |
+| **v2.1-4 & 复审补强** | `qaArtifactsDigest` 双指纹免重跑 + r3 后亲自复审 7 项补强 | ✅ 已完成（已随 `v2.2` Phase 3 验收） | `review-package.json` 增补 `qaArtifactsDigest` 堵住 `.scratch/` 盲区，双指纹未变免除 `VERIFICATION_BEFORE_REVIEW` 重跑，仅 QA 产物变化报 `STALE_QA_ARTIFACTS`；r1–r3 双轴独立闭环后补齐 7 项边界与 README/技能索引同步，**398/398 全绿**、模板逐字节一致，人工终审后本地提交 `1b31f11`；保留「待发布验收（干净会话 `/implement` dogfood）」。 |
 
 ---
 
@@ -76,10 +76,10 @@
 | 阶段 | 包含范围与映射关系 | 状态 | 核心交付与边界 | 触发条件 |
 | :--- | :--- | :---: | :--- | :--- |
 | **Step 0** | `/tools` 业务改动隔离封存 + 两份规划文档回写定格 | ✅ **已完成** | 业务代码封存至 `feat/tools-workbench-ia-migration`（`b8da019`），还原临时 `qa-browser-helper.mjs`，保留 `.scratch/tools-workbench-ia-migration/` 只读副本 | 立即执行（已收口） |
-| **Phase 1（一期）** | **`v2.2 Batch 0~2`（`P0-1~P0-6`）+ `OPT-15` + `OPT-17` + `QA-WF-07` + `ADR-0066`** | ⏳ **下一步（标准车道 `.scratch/qa-workflow-v2-2-phase1/`）** | ① `ADR-0066`：收紧默认自动上限为 `r1 → r2 → WAITING_HUMAN`，取代 `HR-TC07-7` 启用基于轻量 `_qa/round-snapshots/r<n>/` 的机器 `delta.diff`；② **`OPT-15` & `OPT-17`**：迁移 `qa-workflow-contract.test.mjs` 脆弱措辞正则、解除 `qa-workflow.md` 180 行硬上限、瘦身 `CLAUDE.md`（`QA-WF-07`）、清理 `docs/teach/qa-workflow/` 与空壳 `manifest.json` 并在 `setup-qa-workflow` 补齐技能；③ **`P0-1~6`**：不可变快照与 `SUPERSEDED`、`qa-run --executor ego-browser` + `SCRIPT_DIR` 闭包 + 2s 预检 + 三类错误路由、`Coverage: 2` 平滑扩展分组 `reviewUnits` 与哈希继承、`rename` 折叠、`FINDING_ID_COLLISION` + `scaffold-report`、`DESIGN.md` 分层 | 回到干净 `master_newjob` 后立即启动；按标准车道过单测、回归 fixture 与双轴终审后提交 |
-| **Phase 2（二期）** | **`v2.2 Batch 3`（`P0-7` + `INFRA-1~6` + `OBS-1`）+ `/handoff` 防覆写 + 弹层预清理（原 `v2.1 Batch 2`）** | ⏳ **未做（标准车道 `.scratch/qa-workflow-v2-2-phase2/`）** | ① 规划期减法 + `qa-preflight` 扩充（`§10` 路由/任意字体/重名常量/分流预检）；② `INFRA-1~6`：`locator.screenshot()` + 弹层预清理 + `node:zlib` 跨平台裁剪、390px Playwright 分流、`resolveBaseUrl()` + `engines.node >= 22`、`createMarker` 429 拦截、`parseBinding` 单行修复、修复 `session-state-sync.test.ts`；③ `/handoff` 历史留痕与日志强绑定；④ `OBS-1` 替换 `OPT-16` 耗时猜想（直接写入现有 JSON/日志字段） | Phase 1 提交后立即顺接推进；补齐截图与测试验证后过双轴终审提交 |
-| **Phase 2.5** | **`OPT-14`（拆分单体 `qa-check.mjs` 并日落无 challenge 旧双轨）** | ⏳ **未做（标准车道 `.scratch/qa-workflow-v2-2-opt14/`）** | 移除无 `review-challenge.json` 旧转录双轨死代码；拆分单体 `qa-check.mjs` 为 `tooling/scripts/qa-check/` 下 6 个高内聚子模块（`plan`、`acceptance`、`script-scan`、`review-triage`、`provenance`、`spec-coverage`）+ 薄入口；升级安装模板逐字测试为目录级校验 | Phase 1–2 规则与状态机全部稳定后、真实 dogfood 前完成结构收尾 |
-| **Phase 3（发布验收）** | **真实双对照 Dogfood + 关闭 `QA-WF-01` & 摘除「待发布验收」** | ⏳ **未做** | ① **对照 A**：干净会话用新版工作流复验收口 `feat/tools-workbench-ia-migration`（并授权清理残留 `qa_tools_ia_r2` 数据）；② **对照 B**：真实小特性验证 4 类变异盲测（移动锚点死代码 / 无语义绑定 / 空白截图 / 减动效首读错误）；③ 对照 `OBS-1` 实测 SLO 并更新演进报告与 backlog | Phase 2.5 提交后执行，全部达标后摘除「待发布验收」 |
+| **Phase 1（一期）** | **`v2.2 Batch 0~2`（`P0-1~P0-6`）+ `OPT-15` + `OPT-17` + `QA-WF-07` + `ADR-0066`** | ✅ **已完成（`07ef09d`）** | ① `ADR-0066`：收紧默认自动上限为 `r1 → r2 → WAITING_HUMAN`，取代 `HR-TC07-7` 启用基于轻量 `_qa/round-snapshots/r<n>/` 的机器 `delta.diff`；② **`OPT-15` & `OPT-17`**：迁移 `qa-workflow-contract.test.mjs` 脆弱措辞正则、解除 `qa-workflow.md` 180 行硬上限、瘦身 `CLAUDE.md`（`QA-WF-07`）、清理 `docs/teach/qa-workflow/` 与空壳 `manifest.json` 并在 `setup-qa-workflow` 补齐技能；③ **`P0-1~6`**：不可变快照与 `SUPERSEDED`、`qa-run --executor ego-browser` + `SCRIPT_DIR` 闭包 + 2s 预检 + 三类错误路由、`Coverage: 2` 平滑扩展分组 `reviewUnits` 与哈希继承、`rename` 折叠、`FINDING_ID_COLLISION` + `scaffold-report`、`DESIGN.md` 分层 | 已通过标准车道双轴终审并提交 `07ef09d` |
+| **Phase 2（二期）** | **`v2.2 Batch 3`（`P0-7` + `INFRA-1~6` + `OBS-1`）+ `/handoff` 防覆写 + 弹层预清理（原 `v2.1 Batch 2`）** | ✅ **已完成（`d463e90`）** | ① 规划期减法 + `qa-preflight` 扩充（`§10` 路由/任意字体/重名常量/分流预检）；② `INFRA-1~6`：`locator.screenshot()` + 弹层预清理 + `node:zlib` 跨平台裁剪、390px Playwright 分流、`resolveBaseUrl()` + `engines.node >= 22`、`createMarker` 429 拦截、`parseBinding` 单行修复、修复 `session-state-sync.test.ts`；③ `/handoff` 历史留痕与日志强绑定；④ `OBS-1` 替换 `OPT-16` 耗时猜想（直接写入现有 JSON/日志字段） | 已通过标准车道双轴终审并提交 `d463e90` |
+| **Phase 2.5** | **`OPT-14`（拆分单体 `qa-check.mjs` 并日落无 challenge 旧双轨）** | ✅ **已完成（`9be2aa9`）** | 移除无 `review-challenge.json` 旧转录双轨死代码（缺/损坏 challenge 阻断 `MISSING_REVIEW_CHALLENGE`）；拆分单体 `qa-check.mjs` 为 `tooling/scripts/qa-check/` 下 6 个严格无环子模块 + 173 行薄入口；吸收 Phase 1 `S-J1~S-J3` 单源去重；升级安装模板逐字测试为目录级校验 | 已通过标准车道双轴终审并提交 `9be2aa9` |
+| **Phase 3（发布验收）** | **真实双对照 Dogfood + 关闭 `QA-WF-01` & 摘除「待发布验收」** | ✅ **已完成（2026-11-26）** | ① **对照 A**（`phase3/control-a`）：干净会话完整复验 `/tools` 迁移，首轮双轴 **5.12m**、全流程活跃 **32.0m**（较旧阶段 6 `239.6m` 降 86.6%）、Rename 压缩 **91.13%** / 纯代码 **82.4%**、`gate-review-01` PASS，业务分支保留供人工单独终审；② **对照 B**（`phase3/control-b`）：4 类变异盲测 **`4/4` 阻断级无提示独立检出**并两轮闭环、`gate-review-01` PASS；③ 关闭 `QA-WF-01`/`QA-WF-05`/`QA-WF-07` 并全仓摘标 | 已达标收口并清理对照 B 临时 worktree |
 
 ### 3.3 P3：独立分发包（Standalone Template / Plugin Repo）专属项
 
@@ -94,12 +94,12 @@
 
 ---
 
-## 四、真实业务试跑观察记录表（供验证 `v2.1` 与启动 Batch 2 / P2 使用）
+## 四、真实业务试跑观察记录表（`v2.1` 事故基线 vs `v2.2` Phase 3 双对照实测）
 
-接下来用 1–2 个真实业务需求在干净会话走完新版 `v2.1` 后，请顺手填写下表（重点观察**耗时倒挂是否消除**、**`qa-preflight` 与 `v2` 对账体感**、**浏览器截图/交接摩擦**），即可据此启动第 2～4 顺位：
+下表记录真实业务干净会话实跑观测数据（含旧版失败基线与 `v2.2` Phase 3 对照 A / 对照 B 实测）：
 
 | 日期 | 业务特性（`.scratch/<feature>`） | 车道 | 涉及核心链路 | 编码耗时 vs 验收/复审耗时 | `qa-preflight` / `v2` 对账体感与误报 | 浏览器工具（Playwright / `ego-browser`）与截图/交接摩擦 | 值得删减或调整的规则 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-26 | `.scratch/tools-workbench-ia-migration`（未收口失败样本，业务改动已封存至 `feat/tools-workbench-ia-migration`） | 标准车道 | tools/MCP 路由与工作台迁移 | 纯编码 11.4m vs 阶段 6 含返工 239.6m（有效 6 轴 837 调用 / 82.3m） | `Coverage v2` 退化 `40/40` 全必审；`.sh` 变量赋值致 Spec 3 轮 `seal` 100% 失败并翻源码 66 次；577 KB 搬家 Diff | `ego-browser` 移动点击失灵/433px 窄屏、自定义容器 `clip` 拍出 5 张空白图、37 次 429 限流、r1/r2/r4 三轮踩脏工作区 | 直接触发 `v2.2`（`ADR-0066`）全量治本与 `v2.1` 残留全清零（对照详见 `gemini4-*.md`） |
-| _待填（对照 A）_ | | | | | | | |
-| _待填（对照 B）_ | | | | | | | |
+| 2026-11-26 | `.scratch/tools-workbench-ia-migration-v2-2`（Phase 3 对照 A · 隔离分支 `phase3/control-a`） | 标准车道 | `/tools` 工作台、`/profile` 入口、`/chat` 锚点、移动端 390×844 | 全流程活跃 **32.0m**（含规划+搬迁+3 条浏览器验收+双轴+9 项交付）；首轮双轴关键路径 **5.12m**（Standards 3.25m/46 调用，Spec 5.12m/60 调用），较旧阶段 6 `239.6m` 降 **86.6%** | `qa-preflight` 前置把关 0 无效包派发；`gate-acceptance-01` 1 次 PASS（139ms）；18 对 Rename 压缩 **91.13%**（纯代码 **82.4%**，全包含 28 KB 新增 `spec.md` 为 78.87%）；`reviewUnits` 合并为 23 组；Standards `seal` 1 次过、Spec 格式重试 1 次过；`gate-review-01` **PASS**（109ms） | 3 条原生浏览器验收脚本均产清晰非空白目标截图（桌面工作台、聊天锚点、390×844 卡片）；全程零工作区踩脏、零编号冲突、无违规 429 自动重派 | 后续评估非代码纯文档（如 28 KB 新增 `spec.md`）是否单独统计 diff 压缩率口径；其余规则保持稳定 |
+| 2026-11-26 | `.scratch/profile-quick-nav-anchor`（Phase 3 对照 B · 4 类变异零剧透盲测） | 标准车道 | 个人中心快捷锚点导航（桌面容器 + 390×844 移动端文档滚动） | 全流程活跃 **21.85m**（`r1` 双轴 4.50m + 修复重验 + `r2` 增量复审 2.68m）；四次 `seal` 全部 `1` 次通过 | **`4/4` 变异全部 `r1` 无提示阻断级独立检出**（`M1` 滚错宿主 `[S-H2]`/`[P-W5~6]`、`M2` 无语义绑定 `[P-W1~2]`、`M3` 空白图 `[P-M1]`/`[P-W7]`、`M4` 减动效首读 `[S-H1]`/`[P-W3~4]`），另检出 2 条真实 `S-H`；`r2` 全闭环，`gate-review-01` **PASS**（86ms） | `r1` 精准揭穿纯 Node 伪造空白 PNG；`r2` 经 `ego-browser` 真实渲染 390×844 截图（`variance=559.4`）并实测避让固定顶栏；零踩脏、未越界 `r2` | 防线未因减负而放水，当前规则边界有效，无需新增复杂度 |

@@ -1,7 +1,7 @@
 # `qa-workflow` v2.2 第一性原理诊断与 `code-review` 治本最终方案
 
 > **生成与定稿日期**：2026-11-26
-> **文档状态**：已拍板执行蓝图（已融合 Kimi 对抗审查并完成 8 项 `/grill-me` 决策锁定；Phase 1 已落地 `07ef09d`、Phase 2 已落地 `d463e90`，均暂标「待发布验收」；当前推进 Phase 2.5 `OPT-14`，Phase 3 尚未开始，本文不表示 `v2.2` 已完成发布验收）
+> **文档状态**：已全面落地并通过 Phase 3 发布验收（已融合 Kimi 对抗审查并完成 8 项 `/grill-me` 决策锁定；Phase 1 `07ef09d` → Phase 2 `d463e90` → Phase 2.5 `9be2aa9` 全量落地，且已通过 Phase 3 干净会话双对照发布 dogfood，正式关闭 `QA-WF-01`、`QA-WF-05`、`QA-WF-07` 并摘除发布验收暂挂标注；`/tools` 迁移保留于 `phase3/control-a` 待人工单独终审）
 > **技术基线**：`v2.1 Batch 1`（提交 `1b31f11`，`ADR-0065`）、`docs/plans/2026-11-22-qa-workflow-optimization-plan.md`
 > **实证特性**：`.scratch/tools-workbench-ia-migration/`（`v2.1` 上线后首个真实业务标准车道 dogfood，未收口失败样本）
 > **对账参考**：`docs/plans/kimi-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`
@@ -289,15 +289,15 @@ $$T_{\text{总}} = T_{\text{打包/预检}} + T_{\text{首轮双轴关键路径}
 
 ## 五、全周期分阶段执行路线图（Step 0 → Phase 3）
 
-合并 `v2.2` 治本改造与 `docs/plans/2026-11-22-qa-workflow-optimization-plan.md` 主仓残留项（`OPT-15`、`OPT-17`、`/handoff`、弹层预清理、`OPT-14`），按已拍板里程碑推进；**Phase 1 / 2 / 2.5 各自按标准车道完成工具单测 + 契约测试 + 回归 fixture + 独立双轴审查 + 人工终审并本地提交（暂标「待发布验收」），全量落地后统一完成 Phase 3 发布 dogfood 并摘标**：
+合并 `v2.2` 治本改造与 `docs/plans/2026-11-22-qa-workflow-optimization-plan.md` 主仓残留项（`OPT-15`、`OPT-17`、`/handoff`、弹层预清理、`OPT-14`），各阶段均已按标准车道完成落地并通过 Phase 3 双对照发布 dogfood 正式收口摘标：
 
-| 阶段 | 纳入工作项 | 核心目标与完成判据 |
+| 阶段 | 纳入工作项 | 核心目标与完成实绩 |
 | :--- | :--- | :--- |
-| **Step 0：分支隔离与蓝图定格（已完成）** | 切出封存 `/tools` 至 `feat/tools-workbench-ia-migration`，还原临时 `qa-browser-helper.mjs` 修改；同步更新 `v2.2` 与 `v2.1` 两份规划文档 | 回到干净 `master_newjob`（`1b31f11`），保留 `.scratch/tools-workbench-ia-migration/` 只读回归 fixture |
-| **Phase 1：一期 · `code-review` 治本与文档解耦** | **Batch 0**（行为止血与 `DESIGN.md` 分层）+ **`OPT-15`**（解耦契约正则、解除 `qa-workflow.md` 180 行硬上限、瘦身 `CLAUDE.md` 关闭 `QA-WF-07`）+ **`OPT-17`** 残余清理 + **新建 `ADR-0066`** + **Batch 1（`P0-1/2/5`）** + **Batch 2（`P0-3/4/6`）** | 消灭无效包派发、工作区踩踏、编号冲突、`seal` 无限重试与全量重审；第 1–7、9–10 项回归全绿、40 行追踪不丢、`r2` unchanged 重写为 0、迁移 Diff 压缩 `>= 80%` |
-| **Phase 2：二期 · 基础设施、规划减负、`/handoff` 与度量** | **Batch 3**：`P0-7`（规划减法 + `qa-preflight` 扩充）+ **`/handoff` 历史留痕与日志强绑定** + `INFRA-1~6`（`locator.screenshot` + 弹层预清理 + `node:zlib` 裁剪 / Playwright / 端口与 Node 检查 / 429 与 QA 账号治理 / `parseBinding` / 修复 `session-state-sync.test.ts`）+ `OBS-1` 字段级日志 | 压降浏览器打回重验税，并用精确字段替代复盘猜测；补齐第 8 项截图回归测试、`session-state-sync.test.ts` 与全量工具测试通过 |
-| **Phase 2.5：单体拆分与日落旧双轨** | **`OPT-14`**：移除无 `review-challenge.json` 旧转录双轨死代码；拆分 `qa-check.mjs` 为 `tooling/scripts/qa-check/` 下 6 个高内聚子模块 + 薄入口；升级安装模板逐字测试为目录级校验 | 一二期规则稳定后再重构模块结构，避免搬运废弃状态机；全量测试与契约测试无回归 |
-| **Phase 3：干净会话双对照真实发布 Dogfood** | ① **对照 A（迁移密集型）**：用新版 `v2.2` 在干净会话复验收口 `feat/tools-workbench-ia-migration`（并授权清理残留 `qa_tools_ia_r2` 数据）；② **对照 B**：真实小特性验证 4 类变异盲测对照；③ 更新演进报告与 backlog，摘除「待发布验收」关闭 `QA-WF-01` | 实测 `OBS-1` 数据达到或合理解释效率与质量双轨 SLO，完成最终闭环发布 |
+| **Step 0：分支隔离与蓝图定格（已完成，`b8da019`）** | 切出封存 `/tools` 至 `feat/tools-workbench-ia-migration`，还原临时 `qa-browser-helper.mjs` 修改；同步更新 `v2.2` 与 `v2.1` 两份规划文档 | 回到干净 `master_newjob`（`1b31f11`），保留 `.scratch/tools-workbench-ia-migration/` 只读回归 fixture |
+| **Phase 1：一期 · `code-review` 治本与文档解耦（已完成，`07ef09d`）** | **Batch 0**（行为止血与 `DESIGN.md` 分层）+ **`OPT-15`**（解耦契约正则、解除 `qa-workflow.md` 180 行硬上限、瘦身 `CLAUDE.md` 关闭 `QA-WF-07`）+ **`OPT-17`** 残余清理 + **新建 `ADR-0066`** + **Batch 1（`P0-1/2/5`）** + **Batch 2（`P0-3/4/6`）** | 已落地不可变快照与 `SUPERSEDED`、`qa-run --executor ego-browser`、2s 预检与三类错误路由、`Coverage: 2` 分组 `reviewUnits` 与哈希继承、Rename 折叠、`FINDING_ID_COLLISION` + `scaffold-report`、`r2` 上限与 `WAITING_HUMAN` |
+| **Phase 2：二期 · 基础设施、规划减负、`/handoff` 与度量（已完成，`d463e90`）** | **Batch 3**：`P0-7`（规划减法 + `qa-preflight` 扩充）+ **`/handoff` 历史留痕与日志强绑定** + `INFRA-1~6`（`locator.screenshot` + 弹层预清理 + `node:zlib` 裁剪 / Playwright / 端口与 Node 检查 / 429 与 QA 账号治理 / `parseBinding` / 修复 `session-state-sync.test.ts`）+ `OBS-1` 字段级日志 | 已完成规划期减法、6 项基础设施治本、`/handoff` 留痕强绑定与 `OBS-1` 字段级度量，工具单测与回归测试全绿 |
+| **Phase 2.5：单体拆分与日落旧双轨（已完成，`9be2aa9`）** | **`OPT-14`**：移除无 `review-challenge.json` 旧转录双轨死代码；拆分 `qa-check.mjs` 为 `tooling/scripts/qa-check/` 下 6 个高内聚子模块 + 薄入口；吸收 `S-J1~S-J3` 单源去重；升级安装模板逐字测试为目录级校验 | 已完成无环 6 模块重构、173 行薄入口、缺 challenge 阻断 `MISSING_REVIEW_CHALLENGE` 与目录级模板逐字节校验 |
+| **Phase 3：干净会话双对照真实发布 Dogfood（已完成，2026-11-26）** | ① **对照 A（迁移密集型，`phase3/control-a`）**：干净会话复验 `/tools` 迁移，首轮双轴 **5.12m**、全流程活跃 **32.0m**（较旧阶段 6 `239.6m` 降 **86.6%**）、Rename 压缩 **91.13%** / 纯代码 **82.4%**、`gate-review-01` PASS；② **对照 B（4 类变异盲测，`phase3/control-b`）**：**`4/4` 全部 `r1` 阻断级独立检出**并两轮闭环、`gate-review-01` PASS；③ 回填演进报告与 backlog，正式关闭 `QA-WF-01`、`QA-WF-05`、`QA-WF-07` 并摘标 | 效率轨与质量防线轨双达标；主仓摘标提交并与 `/tools` 业务分支解耦（`phase3/control-a` 保留待人工终审），清理对照 B 临时 worktree |
 
 ---
 

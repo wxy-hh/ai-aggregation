@@ -806,11 +806,11 @@ test('ADR-0057 门禁日志、backlog 与发布验收状态同步', async () => 
     assert.match(content, /gate-plan-|gate-acceptance-|gate-review-/);
   }
   const backlog = await read('docs/plans/qa-workflow-backlog.md');
-  assert.match(backlog, /QA-WF-05[\s\S]*?已实现/);
-  assert.match(backlog, /QA-WF-01[\s\S]*?待发布验收|待执行/);
+  assert.match(backlog, /QA-WF-05[\s\S]*?(?:已实现|已完成)/);
+  assert.match(backlog, /QA-WF-01[\s\S]*?已完成[\s\S]*?Phase 3/);
   const report = await read('docs/reports/qa-workflow-evolution-report.md');
   assert.match(report, /ADR-0057/);
-  assert.match(report, /待发布验收/);
+  assert.match(report, /ADR-0066[\s\S]*?Phase 3|Phase 3[\s\S]*?ADR-0066/);
 });
 
 test('P0-TC06-1 setup-qa-workflow 将 triage-labels.md 标为仅安装 triage 时必选', async () => {
@@ -1085,16 +1085,17 @@ test('[v2.2-P2-TC07-1] implement 阶段 5 前强制预检并推荐局部切片�
   assert.match(guide, /多全角标点[^\n]*局部切片编辑/);
 });
 
-test('[v2.2-P2-TC10-1] 两份蓝图只记录 Phase 1 落地与 Phase 2 推进中', async () => {
+test('[v2.2-P2-TC10-1] 两份蓝图同步记录 v2.2 全周期提交链与 Phase 3 发布验收完成', async () => {
   for (const file of [
     'docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md',
     'docs/plans/2026-11-22-qa-workflow-optimization-plan.md',
   ]) {
     const header = (await read(file)).split('\n').slice(0, 12).join('\n');
     assert.match(header, /Phase 1[^\n]*07ef09d/, file);
-    assert.match(header, /待发布验收/, file);
-    assert.match(header, /当前推进 Phase 2/, file);
-    assert.doesNotMatch(header, /Phase 2 已完成|Phase 2\.5 已完成|Phase 3 已完成/, file);
+    assert.match(header, /Phase 2[^\n]*d463e90/, file);
+    assert.match(header, /Phase 2\.5[^\n]*9be2aa9/, file);
+    assert.match(header, /Phase 3[^\n]*(?:发布验收|双对照)/, file);
+    assert.doesNotMatch(header, /当前推进 Phase 2|均待发布验收|暂标「待发布验收」/, file);
   }
 });
 
