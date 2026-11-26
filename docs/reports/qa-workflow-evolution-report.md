@@ -1,20 +1,20 @@
 # QA 工作流优化记录
 
 > 生成时间：2026-11-05
-> 最近更新：2026-11-26（补齐 v2.2 Phase 1/2/2.5 全阶段提交与 Phase 3 干净会话双对照发布验收，关闭 `QA-WF-01` / `QA-WF-05` / `QA-WF-07` 并摘除 `v2.2` 发布验收暂挂标注）
-> 范围：2026-10-08 ~ 2026-11-26 之间以 QA 工作流为主体的 36 次已提交主仓优化 + 1 次 Phase 3 发布验收摘标收口提交；另记录通用仓同步提交 `d1fc362`
+> 最近更新：2026-11-26（补齐 v2.2 Phase 1/2/2.5 全阶段提交与 Phase 3 干净会话双对照发布验收，关闭 `QA-WF-01` / `QA-WF-05` / `QA-WF-07`、摘除 `v2.2` 发布验收暂挂标注并已推送至 `origin/master_newjob`）
+> 范围：2026-10-08 ~ 2026-11-26 之间以 QA 工作流为主体的 37 次已提交主仓优化（均已合入并推送 `origin/master_newjob`）；另记录通用仓同步提交 `d1fc362`
 > 数据来源：git 提交历史、提交说明、`docs/adr/` 决策记录、两仓测试与发布 lint；各次真实运行的复盘材料位于本机 `.scratch/`（不入库，见 `docs/agents/issue-tracker.md`）
 > 相关文件：正本 `docs/agents/qa-workflow.md`、参考书 `docs/agents/qa-workflow-guide.md`、检查器 `tooling/scripts/qa-check.mjs`（含 `tooling/scripts/qa-check/*.mjs` 六子模块）/ `qa-run.mjs` / `review-package.mjs` / `qa-spec-review.mjs` / `qa-preflight.mjs`、浏览器辅助 `tooling/scripts/qa-browser-helper.mjs`、基线统计 `docs/reports/qa-wf-02-baseline-2026-11-25.md`、契约测试 `tooling/scripts/__tests__/qa-workflow-contract.test.mjs`
 > 本轮审计与收敛修复的详细记录：`docs/reports/2026-11-18-qa-workflow-audit-remediation.md`、`docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`
 
 ## 概览
 
-截至 11-26，共 36 次已提交主仓优化 + 1 次 Phase 3 发布验收摘标收口提交（不含通用仓同步提交）。三个核心产物的规模变化：
+截至 11-26，共 37 次已提交主仓优化（均已推送至 `origin/master_newjob`，不含通用仓同步提交）。三个核心产物的规模变化：
 
 | 产物 | 起点 | 现状（11-26） |
 | --- | --- | --- |
 | 正本 `qa-workflow.md` | 86 行（初版） | 178 行（已于 Phase 1 `OPT-15` 解除 180 行硬锁，保持紧凑清晰） |
-| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 薄入口 173 行 + `tooling/scripts/qa-check/` 6 个无环子模块 3,278 行（共 3,451 行）；全量工具测试 0 失败 / 0 跳过 |
+| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 薄入口 173 行 + `tooling/scripts/qa-check/` 6 个无环子模块 3,278 行（共 3,451 行）；全量工具测试 `450/450` 全绿（0 失败 / 0 跳过） |
 | QA 相关 ADR | 0 | 16 份：0023、0024、0026、0031、0033、0035、0040、0042、0043、0044、0047、0048、0054、0057、0065、0066 |
 
 每次大改动几乎都源自一次真实运行暴露的问题，而不是预先设计：agent-kb-loop 暴露了审查闭环漏洞（ADR-0033/0035），KB-CHAT-CITE 与知识库预览修复暴露了证据造假路径（ADR-0026），agent-hitl-action 暴露了流程成本倒挂（ADR-0042），一次外部评价暴露了车道与宿主缺口（ADR-0043/0044），四次真实需求复盘又暴露了审查来源、事件时间与正文编号语义边界（ADR-0047 及 ADR-0040 修订），四特性复盘基线驱动了 v2.1 预检前置与防线闭环（ADR-0065），而 `.scratch/tools-workbench-ia-migration/` 的真实 239.6 分钟阶段 6 翻车复盘最终驱动了 v2.2 不可变快照、增量继承、基础设施治本、六模块拆分与 Phase 3 干净会话双对照发布验收（ADR-0066）。本记录按十二个阶段逐次说明。
@@ -262,7 +262,7 @@
   - 标准车道内经 TDD 先红后绿完成 r1–r3 独立双轴审查闭环（r1 捕获并修复 `[S-H1]`、`[S-J1~S-J3]`、`[P-W1]`、`[P-W2]`，`[S-J4]` 默认驳回；r2 复核 `TC03-2`；r3 双轴判已修且无新发现；`gate-review-2` 机器校验 `PASS`，来源核验：自述凭据（弱））。
   - r3 后规划模型亲自对全部改动做拉网复审，进一步查出并补齐 7 项边界与索引漂移（`qa-run --script` 防误劫持、`qa-spec-review` 中文否定/`process.exitCode = 0` 正则回溯/`## 抽检范围` 防空标题绕过、`qa-check` 单轴复用防逃逸与诊断只读属性放行、`qa-preflight` 永真字面/注释色值/`extractOpeningTagWindow` 跨行按钮窗口，以及 `README.md`、`qa-workflow-guide.md`、`implement/SKILL.md` 与 `skill-customizations.md` 索引同步），补充对应回归测试至全量 **398/398 通过（fail 0）**、ESLint 通过、`qa-preflight` 0 ERROR / 0 WARN、模板与工具逐字节一致（本地提交 `1b31f11`；发布验收已于阶段十二 `v2.2` Phase 3 双对照 dogfood 一并闭环）。
 
-## 阶段十二：真实事故驱动的 v2.2 治本闭环、单体拆分与 Phase 3 双对照发布验收（11-26，ADR-0066，3 次主仓实现提交 + 1 次摘标收口）
+## 阶段十二：真实事故驱动的 v2.2 治本闭环、单体拆分与 Phase 3 双对照发布验收（11-26，ADR-0066，4 次主仓提交）
 
 > 来源：首个 `v2.1` 真实业务标准车道试跑（`.scratch/tools-workbench-ia-migration/`）发生 239.6 分钟阶段 6 耗时倒挂与 Spec 三轮 `seal` 失败，经一手源码与 11 份子代理 JSONL 深度复盘、融合 Kimi 对抗审查并经 8 轮 `/grill-me` 锁板，按 **Step 0（隔离封存 `b8da019`）→ Phase 1（`07ef09d`）→ Phase 2（`d463e90`）→ Phase 2.5（`9be2aa9`）→ Phase 3（双对照发布验收）** 串行收口。
 
@@ -290,12 +290,12 @@
   1. **无环六模块重构 + 薄入口**：拆分为 `tooling/scripts/qa-check/` 下 6 个严格分层无环子模块（`plan`、`script-scan`、`provenance`、`spec-coverage`、`acceptance`、`review-triage`）+ 173 行薄入口 `qa-check.mjs`，100% 保持原导出与 CLI 兼容、零外部依赖。
   2. **日落旧双轨与单源去重**：移除无 `review-challenge.json` 的旧转录双轨死代码，缺失或损坏 challenge 一律阻断输出 `MISSING_REVIEW_CHALLENGE`（`BLOCKED`）；`PREDICATE_KEYWORDS`/`hasPredicateInText`/`REREVIEW_STATUS_PATTERN` 单源于 `qa-spec-review.mjs`，`sha256`/`sha256FileOrNull` 单源于 `review-package.mjs`；升级安装模板逐字节校验至 `templates/qa-check/` 目录级。
 
-### 37. Phase 3 干净会话双对照发布 Dogfood 与全仓摘标收口（11-26）
+### 37. `12c3cce` Phase 3 干净会话双对照发布 Dogfood 与全仓摘标收口（11-26）
 
 - **验收方式**：另开两场全新独立干净顶级会话，在两个隔离 worktree 中分别执行效率轨与质量防线轨双对照，并与原 `.scratch/tools-workbench-ia-migration/` 事故基线及 `blind-mutation-key.md` 逐项核验：
-  - **对照 A（效率轨，`.scratch/tools-workbench-ia-migration-v2-2`，`phase3/control-a`）**：原题复验 `/tools` 工作台迁移。首轮双轴关键路径 **5.12 分钟**（Standards `3.25m` / 46 次调用 / `sealAttempts: 1`；Spec `5.12m` / 60 次调用 / `sealAttempts: 2` 即格式重试 1 次过、包错 `0` 重试），全流程活跃总耗时 **32.0 分钟**（含规划、搬迁、3 条真实浏览器验收截图、双轴审查与 9 项交付日志，较旧版仅阶段 6 `239.6 分钟` 压缩 **86.6%**）；18 对 Rename 文件压缩 **91.13%**（纯代码不含 28 KB 新增 `spec.md` 压缩 **82.4%**，全包 `121,979 B` 较旧基线压 **78.87%**，经 `/grill-me` 人工裁决确认达标）；`gate-acceptance-01`（139ms）与 `gate-review-01`（109ms）均一次 `PASS`，零工作区踩脏、零编号冲突。业务代码完整保留于 `phase3/control-a` 供人工单独终审决定合入。
-  - **对照 B（质量防线轨，`.scratch/profile-quick-nav-anchor`，`phase3/control-b`）**：零剧透植入 4 类历史高发变异（`M1` 移动锚点滚错宿主、`M2` 无语义按钮绑定、`M3` 空白 `VisualTarget` 截图、`M4` 减动效首读错误）。`r1` 独立双轴在无提示下 **`4/4` 全部阻断级独立检出**（`M1` `[S-H2]`/`[P-W5~6]`、`M2` `[P-W1~2]`、`M3` `[P-M1]`/`[P-W7]`、`M4` `[S-H1]`/`[P-W3~4]`），另捕获 2 条真实 `S-H`；`r2` 全修闭环并用 `ego-browser` 真实渲染 `390×844` 截图（`variance=559.4`），四次 `seal` 全部 `1` 次通过，`gate-review-01` `PASS`（86ms），全程活跃 **21.85 分钟**，零踩脏、未越界 `r2`。
-- **收口状态**：经 5 项 `/grill-me` 终审锁定，正式关闭 `QA-WF-01`、`QA-WF-05`、`QA-WF-07`，全仓摘除 `v2.2` 发布验收暂挂标注，在 `master_newjob` 形成最终本地摘标提交（不 push）并清理对照 B 临时 worktree。
+  - **对照 A（效率轨，`.scratch/tools-workbench-ia-migration-v2-2`，原分支 `phase3/control-a`）**：原题复验 `/tools` 工作台迁移。首轮双轴关键路径 **5.12 分钟**（Standards `3.25m` / 46 次调用 / `sealAttempts: 1`；Spec `5.12m` / 60 次调用 / `sealAttempts: 2` 即格式重试 1 次过、包错 `0` 重试），全流程活跃总耗时 **32.0 分钟**（含规划、搬迁、3 条真实浏览器验收截图、双轴审查与 9 项交付日志，较旧版仅阶段 6 `239.6 分钟` 压缩 **86.6%**）；18 对 Rename 文件压缩 **91.13%**（纯代码不含 28 KB 新增 `spec.md` 压缩 **82.4%**，全包 `121,979 B` 较旧基线压 **78.87%**，经 `/grill-me` 人工裁决确认达标）；`gate-acceptance-01`（139ms）与 `gate-review-01`（109ms）均一次 `PASS`，零工作区踩脏、零编号冲突。经人工终审确认后，业务代码已线性合入 `master_newjob`（`7ff16f1`）并推送远端，临时 worktree 已清理，完整审计证据归档至本机 `.scratch/tools-workbench-ia-migration-v2-2/`。
+  - **对照 B（质量防线轨，`.scratch/profile-quick-nav-anchor`，原分支 `phase3/control-b`）**：零剧透植入 4 类历史高发变异（`M1` 移动锚点滚错宿主、`M2` 无语义按钮绑定、`M3` 空白 `VisualTarget` 截图、`M4` 减动效首读错误）。`r1` 独立双轴在无提示下 **`4/4` 全部阻断级独立检出**（`M1` `[S-H2]`/`[P-W5~6]`、`M2` `[P-W1~2]`、`M3` `[P-M1]`/`[P-W7]`、`M4` `[S-H1]`/`[P-W3~4]`），另捕获 2 条真实 `S-H`；`r2` 全修闭环并用 `ego-browser` 真实渲染 `390×844` 截图（`variance=559.4`），四次 `seal` 全部 `1` 次通过，`gate-review-01` `PASS`（86ms），全程活跃 **21.85 分钟**，零踩脏、未越界 `r2`。临时 worktree 已清理，原始审计证据归档至本机 `.scratch/qa-workflow-v2-2-phase3/control-b-archive/profile-quick-nav-anchor/`。
+- **收口状态**：经 5 项 `/grill-me` 终审锁定，正式关闭 `QA-WF-01`、`QA-WF-05`、`QA-WF-07`，全仓摘除 `v2.2` 发布验收暂挂标注，形成摘标提交 `12c3cce` 并与 `/tools` 业务合入提交 `7ff16f1` 一并推送至 `origin/master_newjob`。
 
 ## 规律小结
 
@@ -344,6 +344,6 @@
 | 34 | 11-26 | `07ef09d` | v2.2 Phase 1：不可变快照、冻结屏障、错误路由、`Coverage: 2` 继承、Rename 折叠与 `OPT-15`/`QA-WF-07` | 0066（修订 0033/0054/0065） |
 | 35 | 11-26 | `d463e90` | v2.2 Phase 2：规划减负、`qa-preflight` 扩充、`/handoff` 留痕强绑定、`INFRA-1~6` 与 `OBS-1` | 0066 |
 | 36 | 11-26 | `9be2aa9` | v2.2 Phase 2.5（`OPT-14`）：拆 `qa-check.mjs` 为 6 子模块、单源去重与日落旧双轨 | 0066 |
-| 37 | 11-26 | 本次收口提交 | v2.2 Phase 3：干净会话双对照发布验收回填、关闭 `QA-WF-01`/`05`/`07` 与全仓摘标 | 0066（发布验收闭环） |
+| 37 | 11-26 | `12c3cce` | v2.2 Phase 3：干净会话双对照发布验收回填、关闭 `QA-WF-01`/`05`/`07` 与全仓摘标 | 0066（发布验收闭环） |
 
-通用仓同步提交：`d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`（不计入主仓 36 次已提交序号）。
+通用仓同步提交：`d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`（不计入主仓 37 次已提交序号；对照 A 业务合入提交 `7ff16f1` 属业务特性，不计入工作流优化序号）。
