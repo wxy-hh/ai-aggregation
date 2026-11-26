@@ -1,5 +1,5 @@
 /**
- * profile-tool-entry-modal.test.tsx —— 创建工具三入口弹层交互测试
+ * tool-entry-modal.test.tsx —— 创建工具三入口弹层交互测试
  *
  * 覆盖的规格与验收标准（工单 05 / spec §E2）：
  * 1. 三入口展示：从模板创建、粘贴 cURL 导入、手动填写；
@@ -13,17 +13,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { ProfileToolEntryModal } from './profile-tool-entry-modal';
-import { TOOL_TEMPLATES } from './profile-tool-templates';
+import { ToolEntryModal } from './tool-entry-modal';
+import { TOOL_TEMPLATES } from './tool-templates';
 
-describe('ProfileToolEntryModal 创建工具三入口', () => {
+describe('ToolEntryModal 创建工具三入口', () => {
   afterEach(() => {
     cleanup();
   });
 
   it('三入口渲染：同时展示「从模板创建」、「粘贴 cURL 导入」与「手动填写」', () => {
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
@@ -39,7 +39,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
   it('点击「从模板创建」展示飞书群机器人与钉钉群机器人模板，选择飞书触发回调', () => {
     const handleSelectTemplate = vi.fn();
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
@@ -64,7 +64,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
   it('从模板列表选择钉钉群机器人触发回调并传递钉钉模板', () => {
     const handleSelectTemplate = vi.fn();
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
@@ -82,7 +82,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
   it('点击「手动填写」直接触发 onSelectManual 回调', () => {
     const handleSelectManual = vi.fn();
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={handleSelectManual}
@@ -96,7 +96,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
 
   it('点击「粘贴 cURL 导入」进入真实解析界面，展示输入文本框与解析提示', () => {
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
@@ -114,7 +114,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
   it('输入合法 cURL 命令解析成功，展示提取摘要、warnings 并可点击「使用此配置」完成回调', () => {
     const handleSelectCurl = vi.fn();
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
@@ -159,7 +159,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
 
   it('输入内网 IP 网址（如 http://192.168.1.1/api）解析成功但即时展示不支持与阻断提示', () => {
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
@@ -184,7 +184,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
   it('输入普通文本等非法内容展示「无法识别，请手动填写」降级态，并支持一键转手动填写', () => {
     const handleSelectManual = vi.fn();
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={handleSelectManual}
@@ -210,7 +210,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
 
   it('模板选择与 cURL 解析视图均支持「返回上一步」回到三入口选择页', () => {
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
@@ -248,7 +248,7 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
     } as any);
 
     render(
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}

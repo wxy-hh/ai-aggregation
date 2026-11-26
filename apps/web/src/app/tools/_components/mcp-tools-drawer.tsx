@@ -29,19 +29,19 @@ import {
   updateMcpToolPolicy,
   type McpToolItem,
 } from '@/lib/api/mcp-servers';
-import { DIALOG_OVERLAY } from './profile-shell';
+import { DIALOG_OVERLAY } from '@/lib/constants/surface-styles';
 
-export interface ProfileMcpToolsDrawerProps {
+export interface McpToolsDrawerProps {
   open: boolean;
   serverId: string;
   onOpenChange: (open: boolean) => void;
 }
 
-export function ProfileMcpToolsDrawer({
+export function McpToolsDrawer({
   open,
   serverId,
   onOpenChange,
-}: ProfileMcpToolsDrawerProps) {
+}: McpToolsDrawerProps) {
   const [tools, setTools] = useState<McpToolItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

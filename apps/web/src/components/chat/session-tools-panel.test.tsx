@@ -293,5 +293,42 @@ describe('SessionToolsPanel 可用工具面板与会话级启停 (ADR-0014 / 工
         expect(trigger.textContent).toContain('4');
       });
     });
+
+    it('工具与 MCP 管理入口指向工具工作台对应分区锚点', async () => {
+      mockedFetchAgentTools.mockResolvedValueOnce([
+        makeUserTool({ id: 'tool-webhook-1', name: '飞书通知' }),
+      ]);
+      mockedFetchEnabledMcpTools.mockResolvedValueOnce([
+        makeMcpTool({ toolName: 'read_value', modelToolName: 'mcp_srv_1_read_value' }),
+      ]);
+
+      render(<SessionToolsPanel isMobile={false} />);
+      fireEvent.click(screen.getByTestId('session-tools-trigger'));
+
+      await waitFor(() => {
+        expect(screen.getByText('MCP 工具')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('管理工具').closest('a')).toHaveAttribute('href', '/tools#webhook');
+      expect(screen.getByText('管理 MCP').closest('a')).toHaveAttribute('href', '/tools#mcp');
+    });
+
+    it('无工具配置时空态引导指向工具工作台对应分区，文案不再指向个人中心', async () => {
+      mockedFetchAgentTools.mockResolvedValueOnce([]);
+      mockedFetchEnabledMcpTools.mockResolvedValueOnce([]);
+
+      render(<SessionToolsPanel isMobile={false} />);
+      fireEvent.click(screen.getByTestId('session-tools-trigger'));
+
+      await waitFor(() => {
+        expect(screen.getByText('暂无配置 Webhook 工具')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('前往我的工具添加').closest('a')).toHaveAttribute('href', '/tools#webhook');
+      expect(screen.getByText('前往我的工具配置').closest('a')).toHaveAttribute('href', '/tools#mcp');
+
+      expect(screen.queryByText('前往个人中心添加')).not.toBeInTheDocument();
+      expect(screen.queryByText('前往个人中心配置')).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,5 +1,5 @@
 /**
- * profile-tools-utils.test.ts —— 工具辅助函数单元测试
+ * tools-utils.test.ts —— 工具辅助函数单元测试
  */
 
 import { describe, it, expect } from 'vitest';
@@ -8,9 +8,9 @@ import {
   validateCallName,
   extractHostname,
   CALL_NAME_REGEX,
-} from './profile-tools-utils';
+} from './tools-utils';
 
-describe('profile-tools-utils 辅助函数', () => {
+describe('tools-utils 辅助函数', () => {
   describe('suggestCallName 调用名建议', () => {
     it('英文名称转换为下划线连接的合法小写调用名', () => {
       expect(suggestCallName('Get Weather')).toBe('get_weather');

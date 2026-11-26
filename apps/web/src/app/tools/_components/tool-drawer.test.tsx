@@ -1,5 +1,5 @@
 /**
- * ProfileToolDrawer 工具设置表单测试：「调用前需要我确认」开关（AGENT-HITL-ACTION / ADR-0041，qa-plan TC11）
+ * ToolDrawer 工具设置表单测试：「调用前需要我确认」开关（AGENT-HITL-ACTION / ADR-0041，qa-plan TC11）
  *
  * 1. 抽屉含「调用前需要我确认」开关；
  * 2. 新建工具选择 POST 时开关默认打开；
@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ProfileToolDrawer } from './profile-tool-drawer';
+import { ToolDrawer } from './tool-drawer';
 import type { SanitizedAgentTool } from '@/lib/api/agent-tools';
 
 const mockCreateAgentTool = vi.fn();
@@ -30,11 +30,11 @@ const SWITCH_NAME = '调用前需要我确认';
 
 function renderDrawer(tool?: SanitizedAgentTool) {
   return render(
-    <ProfileToolDrawer open onOpenChange={vi.fn()} tool={tool ?? null} onSaved={vi.fn()} />
+    <ToolDrawer open onOpenChange={vi.fn()} tool={tool ?? null} onSaved={vi.fn()} />
   );
 }
 
-describe('ProfileToolDrawer：调用前需要我确认开关 (TC11)', () => {
+describe('ToolDrawer：调用前需要我确认开关 (TC11)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

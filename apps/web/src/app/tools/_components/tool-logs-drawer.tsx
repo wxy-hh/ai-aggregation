@@ -43,7 +43,7 @@ import {
   type AgentToolLogItem,
 } from '@/lib/api/agent-tools';
 
-interface ProfileToolLogsDrawerProps {
+interface ToolLogsDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tool: SanitizedAgentTool | null;
@@ -76,12 +76,12 @@ function formatLogTime(dateStr: string): string {
   }
 }
 
-export function ProfileToolLogsDrawer({
+export function ToolLogsDrawer({
   open,
   onOpenChange,
   tool,
   initialStats,
-}: ProfileToolLogsDrawerProps) {
+}: ToolLogsDrawerProps) {
   const [stats, setStats] = useState<AgentToolStats | null>(initialStats ?? null);
   const [logs, setLogs] = useState<AgentToolLogItem[]>([]);
   const [loading, setLoading] = useState(false);

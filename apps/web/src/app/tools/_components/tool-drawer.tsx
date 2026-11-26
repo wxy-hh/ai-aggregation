@@ -53,17 +53,17 @@ import {
   type ProbeConnectionResult,
 } from '@/lib/api/agent-tools';
 import type { WebhookParamItem } from '@/schemas/agent-tool.schema';
-import type { ToolTemplate } from './profile-tool-templates';
+import type { ToolTemplate } from './tool-templates';
 import type { ParsedCurlDto } from '@/lib/agent/parse-curl';
 import {
   suggestCallName,
   validateCallName,
   MAX_PARAMS_LIMIT,
-} from './profile-tools-utils';
-import { DIALOG_OVERLAY } from './profile-shell';
+} from './tools-utils';
+import { DIALOG_OVERLAY } from '@/lib/constants/surface-styles';
 import { toast } from 'sonner';
 
-interface ProfileToolDrawerProps {
+interface ToolDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tool?: SanitizedAgentTool | null;
@@ -72,14 +72,14 @@ interface ProfileToolDrawerProps {
   onSaved: (tool: SanitizedAgentTool) => void;
 }
 
-export function ProfileToolDrawer({
+export function ToolDrawer({
   open,
   onOpenChange,
   tool,
   initialTemplate,
   initialPrefill,
   onSaved,
-}: ProfileToolDrawerProps) {
+}: ToolDrawerProps) {
   const isEditing = Boolean(tool);
 
   // 表单核心字段状态

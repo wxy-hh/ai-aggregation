@@ -1,5 +1,5 @@
 /**
- * ProfileToolCard 单元与交互测试（工单 03）
+ * ToolCard 单元与交互测试（工单 03）
  *
  * 验证目标：
  * 1. 0 次调用时展示「暂无调用数据」空态占位
@@ -11,7 +11,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ProfileToolCard } from './profile-tool-card';
+import { ToolCard } from './tool-card';
 import type { SanitizedAgentTool, AgentToolStats } from '@/lib/api/agent-tools';
 
 const mockTool: SanitizedAgentTool = {
@@ -41,7 +41,7 @@ vi.mock('@/lib/api/agent-tools', async (importOriginal) => {
   };
 });
 
-describe('ProfileToolCard 观测回流指标展示', () => {
+describe('ToolCard 观测回流指标展示', () => {
   const onEdit = vi.fn();
   const onDelete = vi.fn();
   const onToggleEnabled = vi.fn().mockResolvedValue(undefined);
@@ -61,7 +61,7 @@ describe('ProfileToolCard 观测回流指标展示', () => {
     } satisfies AgentToolStats);
 
     render(
-      <ProfileToolCard
+      <ToolCard
         tool={mockTool}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -85,7 +85,7 @@ describe('ProfileToolCard 观测回流指标展示', () => {
     } satisfies AgentToolStats);
 
     render(
-      <ProfileToolCard
+      <ToolCard
         tool={mockTool}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -111,7 +111,7 @@ describe('ProfileToolCard 观测回流指标展示', () => {
     } satisfies AgentToolStats);
 
     render(
-      <ProfileToolCard
+      <ToolCard
         tool={mockTool}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -135,7 +135,7 @@ describe('ProfileToolCard 观测回流指标展示', () => {
     });
 
     render(
-      <ProfileToolCard
+      <ToolCard
         tool={mockTool}
         onEdit={onEdit}
         onDelete={onDelete}

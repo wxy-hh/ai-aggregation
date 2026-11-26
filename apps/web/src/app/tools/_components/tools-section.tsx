@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * profile 页「我的工具」板块（spec §4.6 / 工单 04）
+ * 「我的工具」工作台 Webhook 工具板块
  *
  * 职责与规格：
  * - 获取当前用户 Webhook 工具列表（GET /api/agent-tools）；
@@ -41,21 +41,20 @@ import {
   deleteAgentTool,
   type SanitizedAgentTool,
 } from '@/lib/api/agent-tools';
-import { ProfileToolCard } from './profile-tool-card';
-import { ProfileToolDrawer } from './profile-tool-drawer';
-import { ProfileToolLogsDrawer } from './profile-tool-logs-drawer';
-import { ProfileToolEntryModal } from './profile-tool-entry-modal';
-import type { ToolTemplate } from './profile-tool-templates';
+import { ToolCard } from './tool-card';
+import { ToolDrawer } from './tool-drawer';
+import { ToolLogsDrawer } from './tool-logs-drawer';
+import { ToolEntryModal } from './tool-entry-modal';
+import type { ToolTemplate } from './tool-templates';
 import type { ParsedCurlDto } from '@/lib/agent/parse-curl';
-import { GLASS_CARD, DIALOG_OVERLAY } from './profile-shell';
+import { GLASS_CARD, DIALOG_OVERLAY, HAIRLINE } from '@/lib/constants/surface-styles';
 import { toast } from 'sonner';
 
 /** 单用户最多允许登记的自定义工具数硬上限 */
 const MAX_TOOLS_LIMIT = 10;
 
-const HAIRLINE = 'border-slate-900/[0.06] dark:border-white/[0.08]';
 
-export function ProfileToolsSection() {
+export function ToolsSection() {
   const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const authStatus = useAuthStore((s) => s.status);
@@ -289,7 +288,7 @@ export function ProfileToolsSection() {
               size="sm"
               onClick={() => void loadTools()}
               disabled={loading}
-              className="h-10 rounded-xl border-slate-200/90 bg-white/80 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200 dark:hover:bg-white/10"
+              className="h-11 rounded-xl border-slate-200/90 bg-white/80 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200 dark:hover:bg-white/10"
               aria-label="刷新工具列表"
             >
               <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
@@ -300,7 +299,7 @@ export function ProfileToolsSection() {
               type="button"
               disabled={isLimitReached}
               onClick={handleOpenCreate}
-              className="h-10 rounded-xl px-4 text-xs font-semibold shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
+              className="h-11 rounded-xl px-4 text-xs font-semibold shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
             >
               <Plus className="mr-1.5 h-4 w-4" />
               {isLimitReached ? `已达上限（最多 ${MAX_TOOLS_LIMIT} 个）` : '添加新工具'}
@@ -354,7 +353,7 @@ export function ProfileToolsSection() {
             /* 卡片网格列表 */
             <div className="grid gap-4 md:grid-cols-2">
               {tools.map((tool) => (
-                <ProfileToolCard
+                <ToolCard
                   key={tool.id}
                   tool={tool}
                   onEdit={handleOpenEdit}
@@ -369,7 +368,7 @@ export function ProfileToolsSection() {
       </div>
 
       {/* 创建工具入口选择弹层 */}
-      <ProfileToolEntryModal
+      <ToolEntryModal
         open={isEntryModalOpen}
         onOpenChange={setIsEntryModalOpen}
         onSelectManual={handleSelectManual}
@@ -379,7 +378,7 @@ export function ProfileToolsSection() {
       />
 
       {/* 新增 / 编辑抽屉 */}
-      <ProfileToolDrawer
+      <ToolDrawer
         open={isDrawerOpen}
         onOpenChange={setIsDrawerOpen}
         tool={editingTool}
@@ -389,7 +388,7 @@ export function ProfileToolsSection() {
       />
 
       {/* 调用记录抽屉（工单 03） */}
-      <ProfileToolLogsDrawer
+      <ToolLogsDrawer
         open={Boolean(logsTool)}
         onOpenChange={(open) => {
           if (!open) setLogsTool(null);

@@ -19,6 +19,7 @@ import {
   MessageSquare,
   BookOpen,
   FlaskConical,
+  Wrench,
 } from 'lucide-react';
 
 export type AppId =
@@ -29,7 +30,8 @@ export type AppId =
   | 'knowledge'
   | 'resume'
   | 'video'
-  | 'feedback';
+  | 'feedback'
+  | 'tools';
 
 // 应用图标组件类型：lucide 图标与自定义图标组件都满足该签名
 export type AppIconComponent = React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -96,6 +98,16 @@ export const APP_CONFIGS: AppConfig[] = [
     href: '/knowledge',
     iconColor: 'text-sky-500',
     iconBg: 'bg-sky-100 dark:bg-sky-900/30',
+  },
+  {
+    id: 'tools',
+    label: '我的工具',
+    description: '接入 Webhook 与 MCP 服务，扩展智能体能力。',
+    icon: Wrench,
+    category: 'productivity',
+    href: '/tools',
+    iconColor: 'text-amber-500',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/30',
   },
   {
     id: 'resume',

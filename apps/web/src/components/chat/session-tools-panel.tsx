@@ -398,7 +398,7 @@ export function SessionToolsPanel({
             我的自定义工具 (Webhook)
           </span>
           <Link
-            href="/profile"
+            href="/tools#webhook"
             onClick={() => setIsOpen(false)}
             className="group flex items-center gap-0.5 text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400"
           >
@@ -451,11 +451,11 @@ export function SessionToolsPanel({
               {loadingTools ? '正在加载自定义工具…' : '暂无配置 Webhook 工具'}
             </p>
             <Link
-              href="/profile"
+              href="/tools#webhook"
               onClick={() => setIsOpen(false)}
               className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
             >
-              <span>前往个人中心添加</span>
+              <span>前往我的工具添加</span>
               <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
@@ -474,7 +474,7 @@ export function SessionToolsPanel({
             </span>
           </div>
           <Link
-            href="/profile"
+            href="/tools#mcp"
             onClick={() => setIsOpen(false)}
             className="group flex items-center gap-0.5 text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400"
           >
@@ -542,11 +542,11 @@ export function SessionToolsPanel({
               {loadingTools ? '正在加载 MCP 工具…' : '暂无已启用 MCP 工具'}
             </p>
             <Link
-              href="/profile"
+              href="/tools#mcp"
               onClick={() => setIsOpen(false)}
               className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
             >
-              <span>前往个人中心配置</span>
+              <span>前往我的工具配置</span>
               <ChevronRight className="h-3 w-3" />
             </Link>
           </div>

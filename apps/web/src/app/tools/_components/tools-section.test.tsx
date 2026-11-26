@@ -1,5 +1,5 @@
 /**
- * profile-tools-section.test.tsx —— profile「我的工具」板块及抽屉表单交互测试
+ * tools-section.test.tsx ——「我的工具」工作台 Webhook 工具板块及抽屉表单交互测试
  *
  * 覆盖的规格与行为（spec §4.6 / 工单 04）：
  * 1. 列表渲染：渲染显示名、调用名、URL 域名、方法徽章、凭证状态标识；
@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
-import { ProfileToolsSection } from './profile-tools-section';
+import { ToolsSection } from './tools-section';
 import { useAuthStore } from '@/stores/auth-store';
 import type { SanitizedAgentTool } from '@/lib/api/agent-tools';
 
@@ -56,7 +56,7 @@ const mockTool2: SanitizedAgentTool = {
   updatedAt: '2026-10-01T13:00:00.000Z',
 };
 
-describe('ProfileToolsSection 我的工具板块', () => {
+describe('ToolsSection 我的工具板块', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -121,7 +121,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('天气查询助手')).toBeInTheDocument();
@@ -147,7 +147,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
@@ -176,7 +176,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('天气查询助手')).toBeInTheDocument();
@@ -216,7 +216,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('天气查询助手')).toBeInTheDocument();
@@ -261,7 +261,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
@@ -334,7 +334,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('天气查询助手')).toBeInTheDocument();
@@ -420,7 +420,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('10 / 10')).toBeInTheDocument();
@@ -436,7 +436,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       accessToken: null,
     });
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     expect(screen.getByText('登录后即可管理您的专属 Webhook 工具')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '前往登录' })).toHaveAttribute('href', '/login');
@@ -452,7 +452,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
@@ -563,7 +563,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
@@ -625,7 +625,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       })
     );
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
@@ -758,7 +758,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       });
     });
 
-    render(<ProfileToolsSection />);
+    render(<ToolsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('天气查询助手')).toBeInTheDocument();

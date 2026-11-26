@@ -1,5 +1,5 @@
 /**
- * ProfileToolLogsDrawer 调用记录抽屉组件测试（工单 03 / spec §4.4）
+ * ToolLogsDrawer 调用记录抽屉组件测试（工单 03 / spec §4.4）
  *
  * 验证目标：
  * 1. 抽屉容器必须带有 [data-testid="tool-logs-drawer"]
@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ProfileToolLogsDrawer } from './profile-tool-logs-drawer';
+import { ToolLogsDrawer } from './tool-logs-drawer';
 import type { SanitizedAgentTool } from '@/lib/api/agent-tools';
 
 const mockTool: SanitizedAgentTool = {
@@ -44,7 +44,7 @@ vi.mock('@/lib/api/agent-tools', async (importOriginal) => {
   };
 });
 
-describe('ProfileToolLogsDrawer 调用记录抽屉', () => {
+describe('ToolLogsDrawer 调用记录抽屉', () => {
   const onOpenChange = vi.fn();
 
   beforeEach(() => {
@@ -76,7 +76,7 @@ describe('ProfileToolLogsDrawer 调用记录抽屉', () => {
     });
 
     render(
-      <ProfileToolLogsDrawer
+      <ToolLogsDrawer
         open={true}
         onOpenChange={onOpenChange}
         tool={mockTool}
@@ -119,7 +119,7 @@ describe('ProfileToolLogsDrawer 调用记录抽屉', () => {
     });
 
     render(
-      <ProfileToolLogsDrawer
+      <ToolLogsDrawer
         open={true}
         onOpenChange={onOpenChange}
         tool={mockTool}
@@ -146,7 +146,7 @@ describe('ProfileToolLogsDrawer 调用记录抽屉', () => {
     });
 
     render(
-      <ProfileToolLogsDrawer
+      <ToolLogsDrawer
         open={true}
         onOpenChange={onOpenChange}
         tool={mockTool}

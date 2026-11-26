@@ -41,9 +41,9 @@ import {
   type ProbeConnectionResult,
   type AgentToolStats,
 } from '@/lib/api/agent-tools';
-import { extractHostname } from './profile-tools-utils';
+import { extractHostname } from './tools-utils';
 
-interface ProfileToolCardProps {
+interface ToolCardProps {
   tool: SanitizedAgentTool;
   onEdit: (tool: SanitizedAgentTool) => void;
   onDelete: (tool: SanitizedAgentTool) => void;
@@ -52,14 +52,14 @@ interface ProfileToolCardProps {
   initialStats?: AgentToolStats | null;
 }
 
-export function ProfileToolCard({
+export function ToolCard({
   tool,
   onEdit,
   onDelete,
   onToggleEnabled,
   onViewLogs,
   initialStats,
-}: ProfileToolCardProps) {
+}: ToolCardProps) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ProbeConnectionResult | null>(null);
   const [isToggling, setIsToggling] = useState(false);

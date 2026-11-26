@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * profile 页「MCP 服务器」板块（工单 02 / ADR-0064 §2）
+ * 「MCP 服务」工作台板块（ADR-0064 §2）
  *
  * 职责与规格：
  * - 获取当前用户的 MCP 服务器列表（GET /api/mcp-servers）；
@@ -46,14 +46,13 @@ import {
   refreshMcpServerTools,
   type SanitizedMcpServer,
 } from '@/lib/api/mcp-servers';
-import { GLASS_CARD, DIALOG_OVERLAY } from './profile-shell';
-import { ProfileMcpToolsDrawer } from './profile-mcp-tools-drawer';
+import { GLASS_CARD, DIALOG_OVERLAY, HAIRLINE } from '@/lib/constants/surface-styles';
+import { McpToolsDrawer } from './mcp-tools-drawer';
 import { toast } from 'sonner';
 
 /** 单用户最多允许登记的 MCP 服务器数硬上限 */
 const MAX_SERVERS_LIMIT = 10;
 
-const HAIRLINE = 'border-slate-900/[0.06] dark:border-white/[0.08]';
 
 /** 从地址提取域名（只展示域名，不展示路径与查询串） */
 function extractHostname(raw: string): string {
@@ -87,7 +86,7 @@ function describeDiscovery(
   };
 }
 
-export function ProfileMcpServersSection() {
+export function McpServersSection() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const authStatus = useAuthStore((s) => s.status);
 
@@ -289,7 +288,7 @@ export function ProfileMcpServersSection() {
           </p>
           <Button
             asChild
-            className="mt-5 h-10 rounded-xl px-5 text-xs font-semibold shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
+            className="mt-5 h-11 rounded-xl px-5 text-xs font-semibold shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
           >
             <Link href="/login">
               <LogIn className="mr-1.5 h-3.5 w-3.5" />
@@ -614,7 +613,7 @@ export function ProfileMcpServersSection() {
       </Dialog>
 
       {/* 工具列表抽屉 */}
-      <ProfileMcpToolsDrawer
+      <McpToolsDrawer
         open={Boolean(toolsServerId)}
         serverId={toolsServerId ?? ''}
         onOpenChange={(next) => {

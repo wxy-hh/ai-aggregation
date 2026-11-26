@@ -1,5 +1,5 @@
 /**
- * profile 页「MCP 服务器」板块组件测试（工单 02 / ADR-0064 §2）
+ * 「MCP 服务」工作台板块组件测试（ADR-0064 §2）
  *
  * 验证目标：
  * - 空状态引导与 10 个上限提示
@@ -13,7 +13,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ProfileMcpServersSection } from './profile-mcp-servers-section';
+import { McpServersSection } from './mcp-servers-section';
 
 const mocks = vi.hoisted(() => ({
   fetchServers: vi.fn(),
@@ -73,11 +73,11 @@ beforeEach(() => {
   mocks.refreshTools.mockResolvedValue({ server: sampleServer });
 });
 
-describe('ProfileMcpServersSection MCP 服务器板块', () => {
+describe('McpServersSection MCP 服务器板块', () => {
   it('空状态展示添加引导', async () => {
     mocks.fetchServers.mockResolvedValue([]);
 
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
 
     // 标题与按钮同名，用 role=heading 精确定位标题
     const heading = await screen.findByRole('heading', {
@@ -87,7 +87,7 @@ describe('ProfileMcpServersSection MCP 服务器板块', () => {
   });
 
   it('卡片展示名称、域名与发现状态并包含列表容器标识', async () => {
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
 
     expect(await screen.findByText('代码仓库服务')).toBeTruthy();
     expect(screen.getByTestId('mcp-server-list')).toBeTruthy();
@@ -105,7 +105,7 @@ describe('ProfileMcpServersSection MCP 服务器板块', () => {
       },
     ]);
 
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
 
     expect(await screen.findByText('发现失败')).toBeTruthy();
     expect(screen.getByText('连接超时，请稍后重试')).toBeTruthy();
@@ -121,7 +121,7 @@ describe('ProfileMcpServersSection MCP 服务器板块', () => {
 
   it('已发现成功的服务点击刷新工具会调用刷新接口', async () => {
     const user = userEvent.setup();
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
     await screen.findByText('代码仓库服务');
 
     await user.click(screen.getByRole('button', { name: /刷新工具/ }));
@@ -133,7 +133,7 @@ describe('ProfileMcpServersSection MCP 服务器板块', () => {
 
   it('打开抽屉时鉴权头取值不回显', async () => {
     const user = userEvent.setup();
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
     await screen.findByText('代码仓库服务');
 
     await user.click(screen.getByRole('button', { name: '配置' }));
@@ -150,7 +150,7 @@ describe('ProfileMcpServersSection MCP 服务器板块', () => {
   it('保存失败时显示中文错误', async () => {
     const user = userEvent.setup();
     mocks.createServer.mockRejectedValue(new Error('服务器地址必须使用 https 协议'));
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
     await screen.findByText('代码仓库服务');
 
     await user.click(screen.getByRole('button', { name: /添加 MCP Server/ }));
@@ -163,7 +163,7 @@ describe('ProfileMcpServersSection MCP 服务器板块', () => {
 
   it('删除需要二次确认并调用删除接口', async () => {
     const user = userEvent.setup();
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
     await screen.findByText('代码仓库服务');
 
     await user.click(screen.getByRole('button', { name: '删除' }));
@@ -179,10 +179,33 @@ describe('ProfileMcpServersSection MCP 服务器板块', () => {
   it('未登录时展示登录引导而非表单', async () => {
     mocks.accessToken = null;
 
-    render(<ProfileMcpServersSection />);
+    render(<McpServersSection />);
 
     expect(await screen.findByText('登录后即可管理您的 MCP 服务器')).toBeTruthy();
     expect(screen.queryByLabelText('服务器地址')).toBeNull();
+  });
+
+  it('已达 10 个服务器上限时计数徽标显示 10 / 10 且新增按钮禁用并提示上限', async () => {
+    mocks.fetchServers.mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => ({
+        ...sampleServer,
+        id: `srv_${index + 1}`,
+        name: `服务 ${index + 1}`,
+        url: `https://mcp-${index + 1}.example.com/mcp`,
+      }))
+    );
+
+    render(<McpServersSection />);
+
+    // 计数徽标达到上限
+    expect(await screen.findByText('10 / 10')).toBeTruthy();
+
+    // 新增按钮禁用并给出中文上限提示
+    const addButton = (await screen.findByRole('button', {
+      name: /已达上限（最多 10 个）/,
+    })) as HTMLButtonElement;
+    expect(addButton.disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: '添加 MCP Server' })).toBeNull();
   });
 
   it('API 返回字段级校验错误时提取具体中文原因而非泛化提示', async () => {

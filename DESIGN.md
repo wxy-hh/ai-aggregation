@@ -340,6 +340,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | 语音 voice | Operate | 录音棚 | 录音 ping 圆点+红色计时横幅、波形条、上传进度流光 |
 | 历史 history | Operate | 档案馆 | 瀑布流卡、全屏黑玻璃预览层 |
 | 简历 resume | Operate | 浅色工作台 | `#2F6BFF` 得分环、AI 抽屉、移动 tab 表单 |
+| 我的工具 tools | Operate | 扩展配置台 | 页头无 eyebrow（标题自承担层级）、两块 G-3 玻璃配置卡纵向并列（Webhook 工具 / MCP 服务）、卡片计数徽标 + 44px 触控热区操作按钮、锚点分区直达（`#webhook` / `#mcp`） |
 | 八字 | Experience | 五行命盘 | 五行 orb 角光斑卡、`#5D7CFA` 雷达与选中、IO 揭示 |
 | 紫微 | Experience | 夜幕星宫 | 页级入夜、鎏金+紫微紫、宋体星曜、专属滚动条 |
 | 奇门 | Experience | 金色局盘 | amber 金系宫卡、多彩门星神煞 |

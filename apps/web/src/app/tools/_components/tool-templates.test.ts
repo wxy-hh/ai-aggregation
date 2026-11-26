@@ -1,5 +1,5 @@
 /**
- * profile-tool-templates.test.ts —— 工具配置模板常量与 DTO 校验测试
+ * tool-templates.test.ts —— 工具配置模板常量与 DTO 校验测试
  *
  * 覆盖的规格与验收标准（工单 05 / spec §E1-E3）：
  * 1. 模板常量表（客户端安全，无密钥）：feishu_bot 与 dingtalk_bot；
@@ -20,9 +20,9 @@ import {
   templateToToolInput,
   templateToPartialDto,
   type ToolTemplate,
-} from './profile-tool-templates';
+} from './tool-templates';
 
-describe('工具配置模板（profile-tool-templates）', () => {
+describe('工具配置模板（tool-templates）', () => {
   it('模板列表包含飞书群机器人与钉钉群机器人两款模板', () => {
     expect(TOOL_TEMPLATE_LIST).toHaveLength(2);
     expect(TOOL_TEMPLATE_LIST.map((t) => t.id)).toEqual(['feishu_bot', 'dingtalk_bot']);

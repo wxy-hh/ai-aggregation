@@ -32,4 +32,18 @@ describe('认证页与受保护页路由提示契约', () => {
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe('http://localhost/login?redirect=%2Fhome');
   });
+
+  it('无 Cookie 的 /tools 拦截到登录页并携带回跳意图', () => {
+    const response = middleware(new NextRequest('http://localhost/tools'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost/login?redirect=%2Ftools');
+  });
+
+  it('带 Cookie 的 /tools 直接放行', () => {
+    const response = middleware(requestWithSession('/tools'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+  });
 });

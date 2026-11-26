@@ -39,11 +39,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { DIALOG_OVERLAY } from './profile-shell';
+import { DIALOG_OVERLAY } from '@/lib/constants/surface-styles';
 import {
   TOOL_TEMPLATE_LIST,
   type ToolTemplate,
-} from './profile-tool-templates';
+} from './tool-templates';
 import {
   parseCurl,
   type ParsedCurlDto,
@@ -55,7 +55,7 @@ import { toast } from 'sonner';
 
 type EntryStep = 'entry_selection' | 'ai_draft' | 'template_selection' | 'curl_placeholder';
 
-interface ProfileToolEntryModalProps {
+interface ToolEntryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectManual: () => void;
@@ -75,14 +75,14 @@ type CurlParseState =
     }
   | { status: 'error'; reason: string };
 
-export function ProfileToolEntryModal({
+export function ToolEntryModal({
   open,
   onOpenChange,
   onSelectManual,
   onSelectTemplate,
   onSelectCurl,
   onSelectDraft,
-}: ProfileToolEntryModalProps) {
+}: ToolEntryModalProps) {
   const [step, setStep] = useState<EntryStep>('entry_selection');
   const [curlInput, setCurlInput] = useState('');
   const [parseState, setParseState] = useState<CurlParseState>({ status: 'idle' });
