@@ -20,9 +20,11 @@ import {
   FINDING_ID_PATTERN,
   NO_FINDING_AFTER_ID,
   PLACEHOLDER_ID_EXAMPLE,
+  REREVIEW_STATUS_PATTERN,
   SPEC_REVIEW_CHECKLIST_FILE,
   SPEC_REVIEW_CHECKLIST_V2,
   SPEC_REVIEW_SKELETON_FILE,
+  hasPredicateInText,
   parseSpecReviewChecklist,
   parseSpecReviewCoverage,
   splitMarkdownRow,
@@ -40,9 +42,7 @@ const MAX_AUTO_REVIEW_ROUND = 2;
 const ROUND_SNAPSHOTS_DIR = 'round-snapshots';
 const CONTRACT_DOCS = ['GLOSSARY.md', 'CLAUDE.md', 'DESIGN.md'];
 const BRIEF_MAX_BYTES = 2800;
-const PREDICATE_KEYWORDS = /\b(?:check|expect|it|test|describe|strictEqual|deepStrictEqual|notEqual|toBe|toEqual|toMatch|toContain|toBeVisible|toHaveText|toHaveCount)\s*(?:\(|\.)|\bassert\s*(?:\.\s*\w+|\()|\bprocess\.exitCode\s*=(?!\s*0\b)|\bprocess\.exit\s*\((?!\s*0\b)|\bthrow\s+new\b/i;
 const FINDING_PREFIXES = ['S-H', 'S-J', 'P-M', 'P-W', 'P-X'];
-const REREVIEW_STATUS_PATTERN = /(?:已修|未修|修错|改档成立|改档不成立|维持)/;
 const REVIEWER_EDITABLE_CODES = new Set([
   'REVIEW_RAW_UNNUMBERED',
   'FINDING_NOT_REREVIEWED',
@@ -149,8 +149,18 @@ async function fileExists(file) {
   return (await pathInfo(file))?.isFile() ?? false;
 }
 
-function sha256(content) {
+/** 计算文本或字节缓冲区的 SHA-256 十六进制摘要 */
+export function sha256(content) {
   return createHash('sha256').update(content).digest('hex');
+}
+
+/** 读取指定绝对或相对路径文件并计算 SHA-256；文件不存在或不可读时返回 null */
+export async function sha256FileOrNull(filePath) {
+  try {
+    return sha256(await readFile(filePath));
+  } catch {
+    return null;
+  }
 }
 
 async function hashFile(repo, relative) {
@@ -837,18 +847,6 @@ async function collectOutOfScope(root, scope, expectedScopes) {
   return [...outOfScope.values()];
 }
 
-/** 判断文本文件是否包含除注释/import 外的断言或测试谓词 */
-function fileHasPredicate(text) {
-  for (const line of String(text ?? '').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (/^(?:\/\/|\/\*|\*|\*\/|#)/.test(trimmed)) continue;
-    if (/^import\b/.test(trimmed)) continue;
-    if (PREDICATE_KEYWORDS.test(trimmed)) return true;
-  }
-  return false;
-}
-
 /** 从 Markdown 指定章节抽取表格数据行，排除表头与分隔线 */
 function markdownTableRows(markdown, headingPattern, firstCellExcludes) {
   const excluded = new Set(Array.isArray(firstCellExcludes) ? firstCellExcludes : [firstCellExcludes]);
@@ -919,7 +917,7 @@ async function checkSealability(root, featureDir) {
       if (!cache.has(candidatePath)) {
         cache.set(candidatePath, await readFile(candidatePath, 'utf8'));
       }
-      if (fileHasPredicate(cache.get(candidatePath))) {
+      if (hasPredicateInText(cache.get(candidatePath))) {
         hasPredicateCandidate = true;
         break;
       }
@@ -1441,9 +1439,9 @@ async function scaffoldReport(repo, argument, args) {
     const trajectory = record.occurrences.map((occ) => `r${occ.round}`).join(' → ');
     const lastOcc = record.occurrences.at(-1);
     const statusMatch = lastOcc.round > record.firstRound
-      ? lastOcc.line.match(/(已修|未修|修错|改档成立|改档不成立|维持)/)
+      ? lastOcc.line.match(REREVIEW_STATUS_PATTERN)
       : null;
-    const finalStatus = statusMatch ? statusMatch[1] : '未修';
+    const finalStatus = statusMatch ? statusMatch[0] : '未修';
     if (record.id.startsWith('S-J')) {
       defaultRejects.push(`- [${record.id}]（${lastOcc.location}）${lastOcc.line.replace(/^\s*\[[^\]]+\]\s*/, '')}：默认驳回（微调建议，待复核写「改档成立」或「改档不成立」）`);
     } else {

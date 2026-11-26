@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -159,9 +159,23 @@ test('缺少 review-report 时 review 不通过', async (t) => {
   assert.ok(codes(report).includes('MISSING_REVIEW_REPORT'), formatReport(report));
 });
 
-test('安装模板与工具脚本保持逐字一致', async () => {
+test('安装模板与工具脚本（含 qa-check 子模块目录）保持逐字一致', async () => {
   const [script, template] = await Promise.all([readFile(SCRIPT, 'utf8'), readFile(TEMPLATE, 'utf8')]);
   assert.equal(template, script);
+  const scriptDir = path.join(path.dirname(SCRIPT), 'qa-check');
+  const templateDir = path.join(path.dirname(TEMPLATE), 'qa-check');
+  const [scriptFiles, templateFiles] = await Promise.all([
+    readdir(scriptDir).then((names) => names.filter((n) => n.endsWith('.mjs')).sort()),
+    readdir(templateDir).then((names) => names.filter((n) => n.endsWith('.mjs')).sort()),
+  ]);
+  assert.deepEqual(templateFiles, scriptFiles);
+  for (const name of scriptFiles) {
+    const [srcText, tplText] = await Promise.all([
+      readFile(path.join(scriptDir, name), 'utf8'),
+      readFile(path.join(templateDir, name), 'utf8'),
+    ]);
+    assert.equal(tplText, srcText, `qa-check/${name} 与模板不一致`);
+  }
 });
 
 test('CLI 兼容 pnpm 传入的字面量双横线分隔符', async (t) => {

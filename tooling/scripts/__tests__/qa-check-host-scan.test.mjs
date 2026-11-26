@@ -291,8 +291,8 @@ function reportWith(method) {
   ].join('\n');
 }
 
-/** 完整走过 init、qa-run、acceptance、collect 的审查仓库；两轴原文均为「无发现」 */
-async function reviewRepo(t, method) {
+/** 完整走过 init、qa-run、acceptance、collect 并封存双轴的审查仓库；两轴原文均为「无发现」 */
+async function reviewRepo(t, method, { receiptHost = 'Claude Code' } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'qa-host-review-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   git(dir, ['init', '--quiet']);
@@ -315,11 +315,11 @@ async function reviewRepo(t, method) {
   run([QA_RUN, feature, 'delivery', '--', 'node', '--version']);
   spawnSync(process.execPath, [QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
   run([REVIEW_PACKAGE, 'collect', feature]);
-  // 本组测试覆盖旧轮次的宿主声明行为：删除 challenge 以模拟无 challenge 的历史特性
-  await rm(path.join(feature, '_qa', 'review-challenge.json'), { force: true });
   await writeFile(path.join(feature, 'review-report.md'), reportWith(method));
   await writeDeep(path.join(feature, 'review', 'r1-standards.md'), '规范轴：无发现\n');
   await writeDeep(path.join(feature, 'review', 'r1-spec-axis.md'), '需求轴：无发现\n');
+  run([REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', 'standards', '--file', 'review/r1-standards.md', '--reviewer-kind', 'subagent', '--host', receiptHost]);
+  run([REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', 'spec', '--file', 'review/r1-spec-axis.md', '--reviewer-kind', 'subagent', '--host', receiptHost]);
   return { dir, feature };
 }
 
@@ -351,42 +351,42 @@ async function claudeTranscripts(t, repoDir) {
   await writeDeep(path.join(project, 'session-1', 'subagents', 'agent-1.jsonl'), `${subagent.map((line) => JSON.stringify(line)).join('\n')}\n`);
 }
 
-function transcriptNotes(report) {
-  return report.notes.filter((note) => note.startsWith('转录核验'));
+function sourceNotes(report) {
+  return report.notes.filter((note) => note.startsWith('来源核验'));
 }
 
-test('审查方式行声明非 Claude Code 宿主时转录核验只输出一条不适用 NOTE（TC02-1、TC02-2、TC02-3）', async (t) => {
-  const { dir, feature } = await reviewRepo(t, '审查方式：宿主=Kimi Code；两轴独立子代理');
+test('审查方式行与凭据 host 均非 Claude Code 时跳过转录扫描并记为自述凭据（弱）（TC02-1、TC02-2、TC02-3）', async (t) => {
+  const { dir, feature } = await reviewRepo(t, '审查方式：宿主=Kimi Code；两轴独立子代理', { receiptHost: 'Kimi Code' });
   await claudeTranscripts(t, dir);
   const report = await checkFeature(feature, 'review');
-  const notes = transcriptNotes(report);
-  assert.equal(notes.length, 1, formatReport(report, 'review'));
-  assert.match(notes[0], /Kimi Code/);
-  assert.match(notes[0], /不适用/);
-  assert.ok(!report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
+  const notes = sourceNotes(report);
+  assert.ok(notes.some((note) => note.includes('Kimi Code') && note.includes('跳过 Claude 转录扫描')), formatReport(report, 'review'));
+  assert.ok(notes.some((note) => note.includes('自述凭据（弱）')), formatReport(report, 'review'));
   assert.equal(report.status, 'PASS', formatReport(report, 'review'));
 });
 
-test('审查方式行只在说明文字中提到其他宿主、没有宿主字段时沿用原转录核验（TC02-4）', async (t) => {
+test('审查方式行只在说明文字中提到其他宿主、没有宿主字段时沿用 Claude 转录扫描（TC02-4）', async (t) => {
   const { dir, feature } = await reviewRepo(t, '审查方式：两轴独立子代理（Kimi Code reviewer 类型）');
   await claudeTranscripts(t, dir);
   const report = await checkFeature(feature, 'review');
-  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
-  assert.ok(!report.notes.some((note) => note.includes('不适用')), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('自述凭据（弱）')), formatReport(report, 'review'));
+  assert.ok(!report.notes.some((note) => note.includes('跳过 Claude 转录扫描')), formatReport(report, 'review'));
 });
 
 test('审查方式行声明宿主为 Claude Code 时转录核验照常进行（TC02-5）', async (t) => {
   const { dir, feature } = await reviewRepo(t, '审查方式：宿主=Claude Code；两轴独立子代理');
   await claudeTranscripts(t, dir);
   const report = await checkFeature(feature, 'review');
-  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('自述凭据（弱）')), formatReport(report, 'review'));
+  assert.ok(!report.notes.some((note) => note.includes('跳过 Claude 转录扫描')), formatReport(report, 'review'));
 });
 
 test('宿主声明为小写 claude code 时同样照常核验（TC02-6）', async (t) => {
   const { dir, feature } = await reviewRepo(t, '审查方式：宿主=claude code；两轴独立子代理');
   await claudeTranscripts(t, dir);
   const report = await checkFeature(feature, 'review');
-  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('自述凭据（弱）')), formatReport(report, 'review'));
+  assert.ok(!report.notes.some((note) => note.includes('跳过 Claude 转录扫描')), formatReport(report, 'review'));
 });
 
 test('声明其他宿主不影响自查拦截（TC02-7）', async (t) => {

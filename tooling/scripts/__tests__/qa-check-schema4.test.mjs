@@ -128,11 +128,21 @@ const REPORT_OK = [
   '无范围外改动。',
 ].join('\n');
 
-/** 写入一轮两轴审查原文；默认均为无发现 */
-async function writeRaw(feature, round = 1, { standards = '无发现\n', spec = '无发现\n' } = {}) {
+/** 写入一轮两轴审查原文；默认均为无发现，且当 challenge 存在时自动同步 round 并生成对应凭据 */
+async function writeRaw(feature, round = 1, { standards = '无发现\n', spec = '无发现\n', seal = true } = {}) {
   await mkdir(path.join(feature, 'review'), { recursive: true });
   await writeFile(path.join(feature, 'review', `r${round}-standards.md`), standards);
   await writeFile(path.join(feature, 'review', `r${round}-spec-axis.md`), spec);
+  if (!seal) return;
+  const challengePath = path.join(feature, '_qa', 'review-challenge.json');
+  const rawChallenge = await readFile(challengePath, 'utf8').catch(() => null);
+  if (!rawChallenge) return;
+  const challenge = JSON.parse(rawChallenge);
+  if (challenge.round !== `r${round}`) {
+    challenge.round = `r${round}`;
+    await writeFile(challengePath, `${JSON.stringify(challenge, null, 2)}\n`);
+  }
+  await writeReceipts(feature, { round: `r${round}`, nonce: challenge.nonce });
 }
 
 async function readChallenge(feature) {
@@ -191,20 +201,25 @@ async function receiptRepo(t, options = {}) {
 /** 为单轴写一份同 nonce 子代理转录；hash 与 timestamp 可覆盖以覆盖强档负向分支 */
 async function strongTranscript(configDir, dir, feature, challenge, {
   axis = 'standards',
+  round = challenge.round || 'r1',
   name = `agent-${axis}`,
+  model,
   hash,
   timestamp = new Date().toISOString(),
   finalText,
+  promptExtra = '',
   quoteBinding = false,
 } = {}) {
-  const relative = `review/r1-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
+  const relative = `review/r${round.slice(1)}-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
   const fileHash = createHash('sha256').update(await readFile(path.join(feature, relative))).digest('hex');
+  const nonceLine = quoteBinding
+    ? `  \`QA_REVIEW_NONCE: ${challenge.nonce}\``
+    : `QA_REVIEW_NONCE: ${challenge.nonce}`;
   return writeSubagent(configDir, dir, {
     name,
-    binding: `.scratch/feature|r1|${axis}`,
-    promptExtra: quoteBinding
-      ? `  \`QA_REVIEW_NONCE: ${challenge.nonce}\``
-      : `QA_REVIEW_NONCE: ${challenge.nonce}`,
+    model,
+    binding: `.scratch/feature|${round}|${axis}`,
+    promptExtra: [nonceLine, promptExtra].filter(Boolean).join('\n'),
     quoteBinding,
     timestamp,
     contents: [[{ type: 'text', text: finalText ?? `QA_REVIEW_RECEIPT: ${challenge.nonce}|${hash ?? fileHash}` }]],
@@ -228,7 +243,7 @@ async function reviewRepo(t, {
   deliveryArgv = ['node', '--version'],
   deliveryExit = 0,
   outsideChange = false,
-  challenge = false,
+  challenge = true,
 } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'qa-review3-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -272,7 +287,7 @@ async function reviewRepo(t, {
     encoding: 'utf8',
   });
   assert.equal(collected.status, 0, collected.stderr);
-  // 既有测试模拟旧协议特性：删除 challenge 以继续走全等比对；新协议测试显式保留
+  // 统一 challenge 单轨默认保留 challenge 并写入凭据；仅负向用例显式删除 challenge
   if (!challenge) await rm(path.join(feature, '_qa', 'review-challenge.json'), { force: true });
   await writeFile(path.join(feature, 'review-report.md'), report);
   await writeRaw(feature);
@@ -1399,6 +1414,9 @@ test('以编号最大的轮次为最新一轮，早期轮缺失不报；r4 不�
   assert.equal(fourth.status, 'PASS', formatReport(fourth));
 
   await rm(path.join(feature, 'review', 'r4-standards.md'));
+  for (const r of [1, 2, 3]) {
+    await rm(path.join(feature, 'review', `r${r}-standards.source.json`), { force: true });
+  }
   const partial = await checkFeature(feature, 'review');
   assert.match(partial.issues.find((item) => item.code === 'REVIEW_RAW_MISSING')?.message ?? '', /r4/);
 });
@@ -1545,13 +1563,14 @@ test('转专项后在本特性修好可写当前本次修已修并保留轨迹�
 
 test('最新审查返回早于当前 collect 时不得通过（QA-PROV TC13-3）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const { dir, feature, challenge } = await receiptRepo(t);
   await writeMainSession(configDir, dir);
-  for (const [axis, text] of [['standards', '规范轴：无发现'], ['spec', '需求轴：无发现']]) {
-    await writeSubagent(configDir, dir, {
-      name: `agent-${axis}-stale`, model: 'claude-opus-5-5', binding: `.scratch/feature|r1|${axis}`,
-      timestamp: '2000-01-01T00:00:00.000Z', contents: [[{ type: 'text', text }]],
+  for (const axis of ['standards', 'spec']) {
+    await strongTranscript(configDir, dir, feature, challenge, {
+      axis,
+      name: `agent-${axis}-stale`,
+      model: 'claude-opus-5-5',
+      timestamp: '2000-01-01T00:00:00.000Z',
     });
   }
   const report = await checkFeature(feature, 'review');
@@ -1617,23 +1636,15 @@ test('日志 started 早于缺陷真实返回时修复验证不通过（QA-PROV 
   ]));
   const future = new Date('2099-01-01T00:00:00.000Z');
   await utimes(path.join(feature, 'evidence', 'run.log'), future, future);
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '- [P-W1] 后续真实缺陷的编号示例']]) {
-    await writeSubagent(configDir, dir, {
-      name: `agent-${axis}-r1`, model: 'claude-opus-5-5', binding: `.scratch/feature|r1|${axis}`,
-      timestamp: '2026-01-01T00:00:00.000Z', contents: [[{ type: 'text', text }]],
-    });
-  }
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '[P-W1] 顺序断言不成立']]) {
+  for (const axis of ['standards', 'spec']) {
     await writeSubagent(configDir, dir, {
       name: `agent-${axis}-r2`, model: 'claude-opus-5-5', binding: `.scratch/feature|r2|${axis}`,
-      timestamp: '2099-01-01T00:00:00.000Z', contents: [[{ type: 'text', text }]],
+      timestamp: '2099-01-01T00:00:00.000Z', contents: [[{ type: 'text', text: '[P-W1] 顺序断言不成立' }]],
     });
-  }
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '[P-W1] 已修']]) {
-    await writeSubagent(configDir, dir, {
-      name: `agent-${axis}-r3`, model: 'claude-opus-5-5', binding: `.scratch/feature|r3|${axis}`,
-      promptExtra: '待复核：[P-W1]', contents: [[{ type: 'text', text }]],
+    await strongTranscript(configDir, dir, feature, challenge, {
+      axis, round: 'r3', name: `agent-${axis}-r3`, model: 'claude-opus-5-5', promptExtra: '待复核：[P-W1]',
     });
   }
   const report = await checkFeature(feature, 'review');
@@ -1653,17 +1664,15 @@ test('事件时间正确时文件 mtime 倒挂不影响修复验证（QA-PROV TC
   const old = new Date('2020-01-01T00:00:00.000Z');
   await utimes(path.join(feature, 'evidence', 'run.log'), old, old);
   for (const name of ['r2-standards.md', 'r2-spec-axis.md']) await utimes(path.join(feature, 'review', name), old, old);
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '[P-W1] 顺序断言不成立']]) {
+  for (const axis of ['standards', 'spec']) {
     await writeSubagent(configDir, dir, {
       name: `agent-${axis}-r1`, model: 'claude-opus-5-5', binding: `.scratch/feature|r1|${axis}`,
-      timestamp: '2020-01-01T00:00:00.000Z', contents: [[{ type: 'text', text }]],
+      timestamp: '2020-01-01T00:00:00.000Z', contents: [[{ type: 'text', text: '[P-W1] 顺序断言不成立' }]],
     });
-  }
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '[P-W1] 已修']]) {
-    await writeSubagent(configDir, dir, {
-      name: `agent-${axis}-r2`, model: 'claude-opus-5-5', binding: `.scratch/feature|r2|${axis}`,
-      promptExtra: '待复核：[P-W1]', contents: [[{ type: 'text', text }]],
+    await strongTranscript(configDir, dir, feature, challenge, {
+      axis, round: 'r2', name: `agent-${axis}-r2`, model: 'claude-opus-5-5', promptExtra: '待复核：[P-W1]',
     });
   }
   const report = await checkFeature(feature, 'review');
@@ -1671,112 +1680,91 @@ test('事件时间正确时文件 mtime 倒挂不影响修复验证（QA-PROV TC
   assert.ok(!codes(report).includes('FIX_UNVERIFIED'), formatReport(report));
 });
 
-test('同轮原文可按真实最终返回逐字纠偏（QA-PROV TC07-1）', async (t) => {
+test('单轨禁止同轮修改原文，改写磁盘原文即报 REVIEW_SOURCE_MISMATCH（QA-PROV TC07-1）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
   const specPath = path.join(feature, 'review', 'r1-spec-axis.md');
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '主代理漏改了结论\n' });
   await writeMainSession(configDir, dir);
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '规范轴：无发现' }]],
-  });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|spec',
-    contents: [[{ type: 'text', text: '需求轴：无发现' }]],
-  });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-opus-5-5' });
+  assert.equal((await checkFeature(feature, 'review')).status, 'PASS');
+
+  // 主代理试图同轮篡改磁盘原文（无论是否伪造重算凭据）均触发 REVIEW_SOURCE_MISMATCH
+  await writeFile(specPath, '主代理同轮改写：无发现\n');
   const mismatch = await checkFeature(feature, 'review');
+  assert.equal(mismatch.status, 'FAIL', formatReport(mismatch));
   assert.ok(codes(mismatch).includes('REVIEW_SOURCE_MISMATCH'), formatReport(mismatch));
-  await writeFile(specPath, '需求轴：无发现\n');
-  const corrected = await checkFeature(feature, 'review');
-  assert.equal(corrected.status, 'PASS', formatReport(corrected));
-  assert.equal(await readFile(specPath, 'utf8'), '需求轴：无发现\n');
-  await assert.rejects(readFile(path.join(feature, 'review', 'r1-spec-axis.corrected.md'), 'utf8'), { code: 'ENOENT' });
-  await assert.rejects(readFile(path.join(feature, 'review', 'r2-spec-axis.md'), 'utf8'), { code: 'ENOENT' });
+  assert.match(mismatch.issues.find((item) => item.code === 'REVIEW_SOURCE_MISMATCH')?.hint ?? '', /凭据不得由主代理改写或重算/);
+  await writeReceipt(feature, { round: 'r1', axis: 'spec', nonce: challenge.nonce });
+  const forgedReceipt = await checkFeature(feature, 'review');
+  assert.ok(codes(forgedReceipt).includes('REVIEW_SOURCE_MISMATCH'), formatReport(forgedReceipt));
 });
 
-test('无关会话的相同文本不能替代本轮来源（QA-PROV TC05-1）', async (t) => {
+test('无关会话的错绑定凭据行不能升为强档（QA-PROV TC05-1）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const { dir, feature, challenge } = await receiptRepo(t);
   await writeMainSession(configDir, dir);
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '规范轴：无发现' }]],
-  });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
+  const specHash = createHash('sha256').update(await readFile(path.join(feature, 'review', 'r1-spec-axis.md'))).digest('hex');
   await writeSubagent(configDir, dir, {
     name: 'agent-other-feature', model: 'claude-opus-5-5', binding: '.scratch/other-feature|r1|spec',
-    contents: [[{ type: 'text', text: '需求轴：无发现' }]],
+    promptExtra: `QA_REVIEW_NONCE: ${challenge.nonce}`,
+    contents: [[{ type: 'text', text: `QA_REVIEW_RECEIPT: ${challenge.nonce}|${specHash}` }]],
   });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
-  const note = report.notes.find((item) => item.includes('来源未核验')) ?? '';
-  assert.match(note, /review\/r1-spec-axis\.md/);
-  assert.doesNotMatch(note, /r1-standards/);
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
+  assert.ok(!report.notes.includes('来源核验：转录（强）'), formatReport(report));
 });
 
-test('两轴最终返回经确定性归一后一致时来源核验通过（QA-PROV TC01-1）', async (t) => {
+test('两轴自述凭据与同 nonce 转录哈希完全一致时升为转录（强）（QA-PROV TC01-1）', async (t) => {
   const configDir = await useConfigDir(t);
   const { dir, feature } = await reviewRepo(t);
   await writeRaw(feature, 1, {
-    standards: '<!-- 主代理复制时保留的注释 -->\n规范轴：&lt;无发现&gt;\n',
+    standards: '<!-- 原文含注释 -->\n规范轴：<无发现>\n',
     spec: '需求轴：\n  无发现\n',
   });
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '规范轴：<无发现>' }]],
-  });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|spec',
-    contents: [[{ type: 'text', text: '需求轴： 无发现' }]],
-  });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-opus-5-5' });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
   assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
-  assert.ok(!report.notes.some((note) => note.includes('来源未核验')), formatReport(report));
+  assert.ok(report.notes.includes('来源核验：转录（强）'), formatReport(report));
 });
 
 test('主代理与子代理模型不同不输出任何模型提示（QA-PROV TC06-1）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const { dir, feature, challenge } = await receiptRepo(t);
   await writeMainSession(configDir, dir, { sessionModel: 'claude-opus-5-5' });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards', model: 'claude-haiku-5.5', binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '规范轴：无发现' }]],
-  });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec', model: 'gpt-5.6-sol', binding: '.scratch/feature|r1|spec',
-    contents: [[{ type: 'text', text: '需求轴：无发现' }]],
-  });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-haiku-5.5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'gpt-5.6-sol' });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：转录（强）'), formatReport(report));
   assert.ok(!report.notes.some((note) => /模型|claude-haiku|gpt-5\.6/.test(note)), report.notes.join('\n'));
 });
 
-test('已绑定子代理没有最终返回时保持待独立审查（QA-PROV TC04-2）', async (t) => {
+test('同 nonce 子代理没有可用凭据行时降为自述凭据并提示（QA-PROV TC04-2）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const { dir, feature, challenge } = await receiptRepo(t);
   await writeMainSession(configDir, dir);
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
   await writeSubagent(configDir, dir, {
-    name: 'agent-standards', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '规范轴：无发现' }]],
-  });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec-without-return', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|spec', contents: [],
+    name: 'agent-spec-without-return', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|spec',
+    promptExtra: `QA_REVIEW_NONCE: ${challenge.nonce}`, contents: [],
   });
   const report = await checkFeature(feature, 'review');
-  assert.equal(report.status, 'BLOCKED', formatReport(report));
-  assert.ok(codes(report).includes('REVIEW_SOURCE_MISSING'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.some((note) => note.includes('没有可用的凭据行')), formatReport(report));
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
   assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
 });
 
-test('无法绑定转录时只标来源未核验（QA-PROV TC04-1）', async (t) => {
+test('无法绑定转录时降级为自述凭据或人工核验（QA-PROV TC04-1）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const { dir, feature } = await receiptRepo(t);
   await writeMainSession(configDir, dir);
   await writeSubagent(configDir, dir, {
     name: 'agent-unbound', model: 'claude-opus-5-5',
@@ -1784,7 +1772,7 @@ test('无法绑定转录时只标来源未核验（QA-PROV TC04-1）', async (t)
   });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
-  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report));
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
   assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
 });
 
@@ -1796,11 +1784,11 @@ test('较长编号不能冒充待复核短编号（QA-PROV TC03-3）', async (t)
   await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
     '| P-W1 | 本次修 | 已修 | r1 → r2 已修 | 静态：测试夹具 | |',
   ]));
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '[P-W1] 已修']]) {
-    await writeSubagent(configDir, dir, {
-      name: `agent-${axis}-r2`, model: 'claude-opus-5-5', binding: `.scratch/feature|r2|${axis}`,
-      promptExtra: '待复核：[P-W10]', contents: [[{ type: 'text', text }]],
+  for (const axis of ['standards', 'spec']) {
+    await strongTranscript(configDir, dir, feature, challenge, {
+      axis, round: 'r2', name: `agent-${axis}-r2`, model: 'claude-opus-5-5', promptExtra: '待复核：[P-W10]',
     });
   }
   const report = await checkFeature(feature, 'review');
@@ -1821,19 +1809,18 @@ test('历史已解决与当轮新发现不误报复审输入缺失（QA-PROV TC0
     '| P-W3 | 本次修 | 已修 | r1 → r2 未修 → r3 已修 | 静态：更早未解决 | |',
     '| P-W4 | 本次修 |  | r3 | |',
   ]));
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '[P-W2] 已修\n[P-W3] 已修\n[P-W4] 当轮新发现']]) {
-    await writeSubagent(configDir, dir, {
-      name: `agent-${axis}-r3`, model: 'claude-opus-5-5', binding: `.scratch/feature|r3|${axis}`,
-      promptExtra: '待复核：[P-W2]、[P-W3]', contents: [[{ type: 'text', text }]],
+  for (const axis of ['standards', 'spec']) {
+    await strongTranscript(configDir, dir, feature, challenge, {
+      axis, round: 'r3', name: `agent-${axis}-r3`, model: 'claude-opus-5-5', promptExtra: '待复核：[P-W2]、[P-W3]',
     });
   }
   const report = await checkFeature(feature, 'review');
   assert.ok(!codes(report).includes('REVIEW_REINPUT_MISSING'), formatReport(report));
 
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec-r3', model: 'claude-opus-5-5', binding: '.scratch/feature|r3|spec',
-    promptExtra: '待复核：[P-W2]', contents: [[{ type: 'text', text: '[P-W2] 已修\n[P-W3] 已修\n[P-W4] 当轮新发现' }]],
+  await strongTranscript(configDir, dir, feature, challenge, {
+    axis: 'spec', round: 'r3', name: 'agent-spec-r3', model: 'claude-opus-5-5', promptExtra: '待复核：[P-W2]',
   });
   const missingOlder = await checkFeature(feature, 'review');
   assert.notEqual(missingOlder.status, 'PASS', formatReport(missingOlder));
@@ -1852,11 +1839,11 @@ test('r4 使用当前轮之前最近一次处置判断历史已解决（QA-PROV 
     '| P-W1 | 本次修 | 已修 | r1 → r2 已修 | 静态：历史已解决 | |',
     '| P-W2 | 本次修 | 已修 | r2 → r3 未修 → r4 已修 | 静态：后续修复 | |',
   ]));
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  for (const [axis, text] of [['standards', '无发现'], ['spec', '[P-W2] 已修']]) {
-    await writeSubagent(configDir, dir, {
-      name: `agent-${axis}-r4`, model: 'claude-opus-5-5', binding: `.scratch/feature|r4|${axis}`,
-      promptExtra: '待复核：[P-W2]', contents: [[{ type: 'text', text }]],
+  for (const axis of ['standards', 'spec']) {
+    await strongTranscript(configDir, dir, feature, challenge, {
+      axis, round: 'r4', name: `agent-${axis}-r4`, model: 'claude-opus-5-5', promptExtra: '待复核：[P-W2]',
     });
   }
   const report = await checkFeature(feature, 'review');
@@ -1872,70 +1859,61 @@ test('复审输入缺少待复核编号时 review 不通过（QA-PROV TC03-1）'
   await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
     '| P-W1 | 本次修 | 已修 | r1 → r2 已修 | 静态：测试夹具 | |',
   ]));
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards-r2', model: 'claude-opus-5-5', binding: '.scratch/feature|r2|standards',
-    contents: [[{ type: 'text', text: '无发现' }]],
-  });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec-r2', model: 'claude-opus-5-5', binding: '.scratch/feature|r2|spec',
-    contents: [[{ type: 'text', text: '[P-W1] 已修' }]],
-  });
+  for (const axis of ['standards', 'spec']) {
+    await strongTranscript(configDir, dir, feature, challenge, {
+      axis, round: 'r2', name: `agent-${axis}-r2`, model: 'claude-opus-5-5',
+    });
+  }
   const report = await checkFeature(feature, 'review');
   assert.notEqual(report.status, 'PASS', formatReport(report));
   assert.ok(codes(report).includes('REVIEW_REINPUT_MISSING'), formatReport(report));
   assert.match(report.issues.find((item) => item.code === 'REVIEW_REINPUT_MISSING')?.message ?? '', /P-W1/);
 });
 
-test('已定位最终返回的原文失真时 review 不通过（QA-PROV TC02-1）', async (t) => {
+test('已定位最终返回的凭据行哈希与磁盘原文不一致时 review 不通过（QA-PROV TC02-1）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '主代理改写：无发现\n' });
+  const { dir, feature, challenge } = await receiptRepo(t);
   await writeMainSession(configDir, dir);
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '规范轴：无发现' }]],
-  });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec', model: 'claude-opus-5-5', binding: '.scratch/feature|r1|spec',
-    contents: [[{ type: 'text', text: '子代理实际：无发现' }]],
-  });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-opus-5-5', hash: 'b'.repeat(64) });
   const report = await checkFeature(feature, 'review');
   assert.notEqual(report.status, 'PASS', formatReport(report));
   assert.ok(codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
   assert.match(report.issues.find((item) => item.code === 'REVIEW_SOURCE_MISMATCH')?.message ?? '', /review\/r1-spec-axis\.md/);
 });
 
-test('未绑定转录不含原文时输出来源未核验 NOTE，状态不变（TC04-1）', async (t) => {
+test('无自述凭据且未绑定转录时输出未核验（人工），状态不变（TC04-1）', async (t) => {
   const configDir = await useConfigDir(t);
   const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n', seal: false });
+  await rm(path.join(feature, 'review', 'r1-standards.source.json'), { force: true });
+  await rm(path.join(feature, 'review', 'r1-spec-axis.source.json'), { force: true });
   await writeTranscript(configDir, dir, { text: '规范轴：无发现', model: 'claude-opus-5-5' });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
-  const notes = report.notes.filter((note) => note.startsWith('转录核验'));
-  assert.equal(notes.length, 1, formatReport(report));
-  assert.match(notes[0], /来源未核验/);
+  assert.ok(report.notes.includes('来源核验：未核验（人工）'), formatReport(report));
 });
 
 test('子代理模型与主会话不一致时不输出模型提示（TC04-2）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '同一份原文：无发现\n', spec: '同一份原文：无发现\n' });
-  await writeTranscript(configDir, dir, { text: '同一份原文：无发现', model: 'claude-haiku-5.5' });
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir, { sessionModel: 'claude-opus-5-5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-haiku-5.5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-haiku-5.5' });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
-  const notes = report.notes.filter((note) => note.startsWith('转录核验'));
-  assert.ok(notes.length >= 1, formatReport(report));
-  assert.ok(notes.every((note) => !/模型|claude-haiku-5\.5/.test(note)), notes.join('\n'));
+  assert.ok(report.notes.every((note) => !/模型|claude-haiku-5\.5/.test(note)), report.notes.join('\n'));
 });
 
-test('找不到会话目录时提示来源未核验（TC04-3）', async (t) => {
+test('找不到会话目录时提示无法读取会话目录并保留弱档或人工（TC04-3）', async (t) => {
   await useConfigDir(t);
-  const { feature } = await reviewRepo(t);
+  const { feature } = await receiptRepo(t);
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
-  assert.match(formatReport(report, 'review'), /来源未核验/);
+  assert.match(formatReport(report, 'review'), /无法读取 Claude Code 会话目录/);
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
 });
 
 // ---- 审查闭环与修复验证（.scratch/qa-workflow-review-closure） ----
@@ -1977,63 +1955,60 @@ test('只有早期轮原文缺编号时不报 REVIEW_RAW_UNNUMBERED（TC01-4）'
   assert.ok(!codes(report).includes('REVIEW_RAW_UNNUMBERED'), formatReport(report));
 });
 
-test('只用最终返回匹配，SendMessage 最终返回可用（TC02-1）', async (t) => {
+test('只用最终返回匹配，SendMessage 最终返回中的凭据行同样可用（TC02-1）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const { dir, feature, challenge } = await receiptRepo(t);
+  const specHash = createHash('sha256').update(await readFile(path.join(feature, 'review', 'r1-spec-axis.md'))).digest('hex');
   await writeMainSession(configDir, dir);
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards',
-    model: 'claude-opus-5-5',
-    binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '中间草稿' }], [{ type: 'text', text: '规范轴：无发现' }]],
-  });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
   await writeSubagent(configDir, dir, {
     name: 'agent-spec',
     model: 'claude-opus-5-5',
     binding: '.scratch/feature|r1|spec',
-    contents: [[{ type: 'text', text: '中间草稿' }], [{ type: 'tool_use', id: 'toolu_2', name: 'SendMessage', input: { to: 'main', message: '需求轴：无发现' } }]],
+    promptExtra: `QA_REVIEW_NONCE: ${challenge.nonce}`,
+    contents: [
+      [{ type: 'text', text: '中间草稿' }],
+      [{ type: 'tool_use', id: 'toolu_2', name: 'SendMessage', input: { to: 'main', message: `QA_REVIEW_RECEIPT: ${challenge.nonce}|${specHash}` } }],
+    ],
   });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
-  assert.doesNotMatch(formatReport(report, 'review'), /转录核验/);
+  assert.ok(report.notes.includes('来源核验：转录（强）'), formatReport(report));
 });
 
-test('原文不在任何子代理输出中时 NOTE，状态不变（TC02-2）', async (t) => {
+test('子代理转录没有同 nonce 凭据行且主会话已调用 code-review 时降级为弱档（TC02-2）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const { dir, feature } = await receiptRepo(t);
   await writeMainSession(configDir, dir);
   await writeSubagent(configDir, dir, { model: 'claude-opus-5-5', contents: [[{ type: 'text', text: '别的内容' }]] });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
-  const notes = report.notes.filter((note) => note.startsWith('转录核验'));
-  assert.equal(notes.length, 1, formatReport(report));
-  assert.match(notes[0], /review\/r1-standards\.md/);
-  assert.match(notes[0], /review\/r1-spec-axis\.md/);
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
+  assert.ok(!report.notes.includes('来源核验：转录（强）'), formatReport(report));
 });
 
-test('会话目录存在但审查包之后没有子代理转录时提示来源未核验（TC02-3）', async (t) => {
+test('审查包之后没有同 nonce 子代理且无 Skill 调用时阻断，旧转录不顶替（TC02-3）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeMainSession(configDir, dir);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir, { skill: null });
   const report = await checkFeature(feature, 'review');
-  assert.equal(report.status, 'PASS', formatReport(report));
-  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report));
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_PROVENANCE_UNVERIFIED'), formatReport(report));
 
-  // 审查包之前的子代理转录不算
-  const old = new Date(Date.now() - 3_600_000);
-  const file = await writeSubagent(configDir, dir, { model: 'claude-opus-5-5', contents: [[{ type: 'text', text: '无发现' }]] });
-  await utimes(file, old, old);
+  // 审查包之前的同 nonce 转录也阻断为来源过期
+  const old = new Date(Date.now() - 3_600_000).toISOString();
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5', timestamp: old });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-opus-5-5' });
   const stale = await checkFeature(feature, 'review');
-  assert.ok(stale.notes.some((note) => note.includes('来源未核验')), formatReport(stale));
+  assert.equal(stale.status, 'BLOCKED', formatReport(stale));
+  assert.ok(codes(stale).includes('REVIEW_SOURCE_STALE'), formatReport(stale));
 });
 
 test('审查包之后没有 code-review 的 Skill 调用时 NOTE，带插件前缀的调用视为有（TC02-4）', async (t) => {
   const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '同一份原文：无发现\n', spec: '同一份原文：无发现\n' });
-  await writeSubagent(configDir, dir, { model: 'claude-opus-5-5', contents: [[{ type: 'text', text: '同一份原文：无发现' }]] });
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-opus-5-5' });
   for (const [skill, expected] of [[null, true], ['grilling', true], ['code-review', false], ['team:code-review', false]]) {
     await writeMainSession(configDir, dir, { skill });
     const report = await checkFeature(feature, 'review');
@@ -2230,7 +2205,7 @@ test('[TC05-2] 原文行过长时截断并带截断标记，短行原样输出',
     rows: ['| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |', STATIC_FIXED],
   });
   const output = formatReport(await checkFeature(feature, 'review'), 'review');
-  const line = output.split('\n').find((item) => item.includes('P-W1') && item.includes('r2-spec-axis.md'));
+  const line = output.split('\n').find((item) => item.startsWith('| P-W1 |') && item.includes('r2-spec-axis.md'));
   assert.match(line ?? '', /…（截断）/);
   assert.doesNotMatch(line ?? '', /结尾不应出现/);
   assert.match(output, /\[S-J1\] 短行原样(?!…)/);
@@ -2259,6 +2234,7 @@ test('[TC06-2] 无可靠事件时间时证据 mtime 早于原文不报 FIX_UNVER
     r2: { spec: '[P-W1] 已修\n' },
     rows: ['| P-W1 | 本次修 | 已修 | r1 → r2 | `evidence/fix-old.log` | |'],
   });
+  await rm(path.join(feature, 'review', 'r1-spec-axis.source.json'), { force: true });
   await fixLog(feature, 'fix-old.log', { time: new Date(Date.now() - 3_600_000) });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
@@ -2270,6 +2246,7 @@ async function fixedRepo(t) {
   const repo = await reviewRepo(t);
   const old = new Date(Date.now() - 600_000);
   await writeRaw(repo.feature, 1, { standards: '无发现\n', spec: '[P-W1] 实现有误\n' });
+  await writeReceipts(repo.feature, { round: 'r1', completedAt: old.toISOString() });
   for (const name of ['r1-standards.md', 'r1-spec-axis.md']) await utimes(path.join(repo.feature, 'review', name), old, old);
   await writeRaw(repo.feature, 2, { standards: '无发现\n', spec: '[P-W1] 已修\n' });
   return repo;
@@ -2277,7 +2254,9 @@ async function fixedRepo(t) {
 
 async function fixLog(feature, name, { exit = 0, time } = {}) {
   const file = path.join(feature, 'evidence', name);
-  await writeFile(file, runLog({ label: name.replace(/\.log$/, ''), exit }));
+  const started = new Date(Date.now() + 1000).toISOString();
+  const finished = new Date(Date.now() + 2000).toISOString();
+  await writeFile(file, runLog({ label: name.replace(/\.log$/, ''), exit, started, finished }));
   if (time) await utimes(file, time, time);
 }
 
@@ -2682,34 +2661,29 @@ test('[HR-TC03-2] 未进表的 S-J 不输出默认驳回清单', async (t) => {
   assert.doesNotMatch(formatReport(report, 'review'), /默认驳回 S-J/);
 });
 
-test('[HR-TC04-1] 原文首行注释与实体转义差异不触发来源失真', async (t) => {
+test('[HR-TC04-1] 带注释或实体字面量的封存原文在同 nonce 哈希一致时通过核验', async (t) => {
   const configDir = await useConfigDir(t);
   const { dir, feature } = await reviewRepo(t);
   const body = '比较 a < b && c > d：无发现';
-  await writeRaw(feature, 1, { standards: `<!-- 主代理注：说明 -->\n\n${body}\n`, spec: `${body}\n` });
+  await writeRaw(feature, 1, { standards: `<!-- 审查者原注 -->\n\n${body}\n`, spec: `${body}\n` });
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  for (const [axis, name] of [['standards', 'agent-standards'], ['spec', 'agent-spec']]) {
-    await writeSubagent(configDir, dir, {
-      name, model: 'claude-opus-5-5', binding: `.scratch/feature|r1|${axis}`,
-      contents: [[{ type: 'text', text: '比较 a &lt; b &amp;&amp; c &gt; d：无发现' }]],
-    });
-  }
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-opus-5-5' });
   const report = await checkFeature(feature, 'review');
   assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
-  assert.ok(!report.notes.some((note) => note.includes('来源未核验')), formatReport(report));
+  assert.ok(report.notes.includes('来源核验：转录（强）'), formatReport(report));
 });
 
-test('[HR-TC04-2] 实体转义之外的文字差异仍触发来源失真', async (t) => {
+test('[HR-TC04-2] 封存后哪怕追加注释或实体替换都会改变 SHA-256 并触发来源失真', async (t) => {
   const configDir = await useConfigDir(t);
   const { dir, feature } = await reviewRepo(t);
   await writeRaw(feature, 1, { standards: '比较 a < b：无发现\n', spec: '比较 a < b：无发现\n' });
+  const challenge = await readChallenge(feature);
   await writeMainSession(configDir, dir);
-  for (const [axis, name] of [['standards', 'agent-standards'], ['spec', 'agent-spec']]) {
-    await writeSubagent(configDir, dir, {
-      name, model: 'claude-opus-5-5', binding: `.scratch/feature|r1|${axis}`,
-      contents: [[{ type: 'text', text: '比较 a &lt; c：无发现' }]],
-    });
-  }
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', model: 'claude-opus-5-5' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', model: 'claude-opus-5-5' });
+  await writeFile(path.join(feature, 'review', 'r1-spec-axis.md'), '<!-- 主代理追加注释 -->\n比较 a &lt; b：无发现\n');
   const report = await checkFeature(feature, 'review');
   assert.ok(codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
 });
@@ -2917,34 +2891,17 @@ test('新轮次宿主声明不改变按证据选择路径', async (t) => {
   assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
 });
 
-test('无 challenge 的旧轮次仍按旧逻辑核验', async (t) => {
-  const configDir = await useConfigDir(t);
-  const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
-  await writeMainSession(configDir, dir);
-  await writeSubagent(configDir, dir, {
-    name: 'agent-standards',
-    binding: '.scratch/feature|r1|standards',
-    contents: [[{ type: 'text', text: '规范轴：内容不同\n' }]],
-  });
-  await writeSubagent(configDir, dir, {
-    name: 'agent-spec',
-    binding: '.scratch/feature|r1|spec',
-    contents: [[{ type: 'text', text: '需求轴：无发现\n' }]],
-  });
-  const report = await checkFeature(feature, 'review');
-  assert.ok(codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
+test('缺少或损坏 challenge 一律阻断为 MISSING_REVIEW_CHALLENGE', async (t) => {
+  const { feature } = await reviewRepo(t, { challenge: false });
+  const missing = await checkFeature(feature, 'review');
+  assert.equal(missing.status, 'BLOCKED', formatReport(missing));
+  assert.ok(codes(missing).includes('MISSING_REVIEW_CHALLENGE'), formatReport(missing));
 
-  const legacy = await reviewRepo(t);
-  await writeRaw(legacy.feature, 1);
-  await writeFile(path.join(legacy.feature, 'review-report.md'), REPORT_OK.replace(
-    '审查方式：code-review 的 Standards 与 Spec 两个独立子代理，继承主会话模型',
-    '审查方式：宿主=Kimi Code；两轴独立子代理',
-  ));
-  const legacyReport = await checkFeature(legacy.feature, 'review');
-  assert.equal(legacyReport.status, 'PASS', formatReport(legacyReport));
-  assert.ok(legacyReport.notes.some((note) => note.includes('Claude Code 转录核验不适用')), formatReport(legacyReport));
-  assert.ok(!codes(legacyReport).includes('REVIEW_SOURCE_MISMATCH'), formatReport(legacyReport));
+  const corrupt = await receiptRepo(t);
+  await writeFile(path.join(corrupt.feature, '_qa', 'review-challenge.json'), '{not-json\n');
+  const blocked = await checkFeature(corrupt.feature, 'review');
+  assert.equal(blocked.status, 'BLOCKED', formatReport(blocked));
+  assert.ok(codes(blocked).includes('MISSING_REVIEW_CHALLENGE'), formatReport(blocked));
 });
 
 test('外部会话凭据按弱档接受', async (t) => {
@@ -3234,8 +3191,17 @@ test('P0-TC02-1 本地存储写入 auth 或 session 认证键时报 AUTH_BYPASS_
 });
 
 test('P0-TC05-1 qa-check 不依赖 path.posix.matchesGlob 且绑定 glob 匹配精准覆盖精确路径与通配符', async (t) => {
-  const source = await readFile(path.join(process.cwd(), 'tooling/scripts/qa-check.mjs'), 'utf8');
-  assert.doesNotMatch(source, /matchesGlob/, 'qa-check.mjs 不得依赖 Node 22.5+ 专有的 path.posix.matchesGlob');
+  const { readdir } = await import('node:fs/promises');
+  const scriptFiles = [
+    path.join(process.cwd(), 'tooling/scripts/qa-check.mjs'),
+    ...(await readdir(path.join(process.cwd(), 'tooling/scripts/qa-check')))
+      .filter((name) => name.endsWith('.mjs'))
+      .map((name) => path.join(process.cwd(), 'tooling/scripts/qa-check', name)),
+  ];
+  for (const file of scriptFiles) {
+    const source = await readFile(file, 'utf8');
+    assert.doesNotMatch(source, /matchesGlob/, `${file} 不得依赖 Node 22.5+ 专有的 path.posix.matchesGlob`);
+  }
 
   const cases = [
     { file: 'tests/sub/a+1.test.mjs', argv: ['node', '--test', 'tests/sub/a+1.test.mjs'], hit: true },

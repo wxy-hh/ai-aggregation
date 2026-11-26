@@ -41,7 +41,7 @@ AI 辅助编码最常见的三类返工：
 
 | 以前靠自述 | 现在靠产物 |
 | --- | --- |
-| 报告里粘贴的审查原文 | 有 challenge 时子代理自写原文并 seal 生成凭据；无 challenge 的旧轮次由主代理逐字落盘到 `review/` + 编号对账 |
+| 报告里粘贴的审查原文 | `collect` 发放 challenge 后由子代理自写原文并 `seal` 生成凭据到 `review/` + 编号对账 |
 | 执行记录写 PASS | 日志里的 `[TC01-1] PASS 实测：…` 标记、unit 的「文件 › 标题」绑定 |
 | “我用的是真实输入” | `scripts/` 静态扫描：绕过登录与脚本内登录硬失败，模拟输入标注 |
 | “已修” | 分流表「验证证据」列指向修复后产生的证据 |
@@ -51,7 +51,7 @@ AI 辅助编码最常见的三类返工：
 
 ### 和 Matt Pocock 技能体系的关系
 
-本工作流继承 [Matt Pocock Skills](https://github.com/mattpocock/skills) 的需求盘问、领域建模、Seam、垂直切片和双轴审查。`code-review` 已内聚为前后一致的单一中文指令（保留上游署名与 Fowler 坏味道基线，替换 diff 来源与原文落盘方式：有 challenge 时子代理自写并 seal，无 challenge 的旧轮次由主代理逐字落盘）。本项目额外加了：spec 后的 qa-plan、核心链路的可见浏览器验收、`_qa/` 基线与审查包、三档分流与增量复审。
+本工作流继承 [Matt Pocock Skills](https://github.com/mattpocock/skills) 的需求盘问、领域建模、Seam、垂直切片和双轴审查。`code-review` 已内聚为前后一致的单一中文指令（保留上游署名与 Fowler 坏味道基线，替换 diff 来源与原文落盘方式：由 `collect` 发放 challenge，子代理自写并 `seal` 封存）。本项目额外加了：spec 后的 qa-plan、核心链路的可见浏览器验收、`_qa/` 基线与审查包、三档分流与增量复审。
 
 ---
 
@@ -108,7 +108,7 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> gate-review-final -- node too
 
 ### 宿主与同名技能
 
-流程主路径是宿主无关的审查来源凭据（ADR-0048）：`collect` 发放 challenge，审查子代理自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`，`qa-check` 按证据分级——同 nonce 的 Claude Code 转录为「转录（强）」，只有凭据为「自述凭据（弱）」，都没有为「未核验（人工）」。只读探索型子代理不能担任审查者；Codex 等无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce seal，主代理不得自动启动无头审查者。无 challenge 的旧轮次继续走旧逻辑（Claude Code 全等比对，其他宿主人工 NOTE）。个人级同名技能检测仍在 `plan` 与 `review` 阶段执行（在其他宿主运行时同样检查），流程技能同名且内容不同时判 BLOCKED。
+流程统一采用宿主无关的审查来源 challenge 单轨凭据协议（ADR-0048、OPT-14）：`collect` 发放 challenge，审查子代理自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`，`qa-check` 按证据分级——同 nonce 的 Claude Code 转录为「转录（强）」，只有凭据为「自述凭据（弱）」，都没有为「未核验（人工）」。只读探索型子代理不能担任审查者；Codex 等无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce seal，主代理不得自动启动无头审查者；缺少或损坏 `_qa/review-challenge.json` 时阻断为 `MISSING_REVIEW_CHALLENGE`。个人级同名技能检测仍在 `plan` 与 `review` 阶段执行（在其他宿主运行时同样检查），流程技能同名且内容不同时判 BLOCKED。
 
 ### 成本边界
 
@@ -231,7 +231,7 @@ await browser.close();
 
 **真实链路冒烟**：触及核心链路时至少一条 browser 用例走真实登录、真实输入与真实后端，只断言本次新产生的用户可见终态（如流式结束、无错误态、控制台无报错），不断言模型非确定性分支。响应注入只在本次改了对应渲染代码时补充构造前端前置或故障态，备注写明「响应注入」，不得替代真实链路冒烟。页面内 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值只用于读取状态或构造前置条件，并在备注写明。
 
-### 4. 审查原文（有 challenge 时子代理自写并 seal；旧轮次由主代理逐字落盘）
+### 4. 审查原文（`collect` 发放 challenge，子代理自写并 `seal`）
 
 ```markdown
 [P-M1] 缺失：spec US 12 要求保留修复尝试记录，diff 中未见对应处理。
@@ -239,9 +239,9 @@ await browser.close();
 [P-X1] 范围蔓延：新增了 spec 未要求的 --verbose 参数。
 ```
 
-新协议下上述原文由子代理直接写入 `review/r1-spec-axis.md` 并 seal；无 challenge 的旧轮次才由主代理逐字落盘。
+上述原文由独立审查子代理直接写入 `review/r1-spec-axis.md` 并立即执行 `seal` 封存（禁止主代理转抄、改写或同轮补写）。
 
-**审查来源凭据怎么用（有 challenge 的新轮次）**：
+**审查来源凭据怎么用**：
 
 1. `collect` 把轮次、nonce、treeDigest 与打包时间写入 `_qa/review-challenge.json`。需要显式开新一轮时用 `--round r<n>`；再次 collect 会换 nonce，旧凭据不能用于新轮次。
 2. 主代理把 `QA_REVIEW_BINDING` 与 `QA_REVIEW_NONCE` 两行写进子代理 prompt，并附上可复制执行的 seal 命令与宿主名。审查子代理必须能写文件、能执行命令；只读探索型代理（如 Kimi Code 的 `explore` profile）不能担任审查者。
@@ -304,7 +304,8 @@ GLOSSARY.md 的改动开工前已存在，与本特性无关。
 | `TEST_BINDING_OUT_OF_RUN` | 证据命令没跑到绑定的测试文件 | 改绑定，或用覆盖该文件的命令重跑 |
 | `AUTH_BYPASS_IN_SCRIPT` | `scripts/` 里有注入 Cookie、写令牌、引入数据库驱动（含工作区里直接依赖驱动的包，如本仓库 `@repo/db`）、密码字面量、登录或注册接口、`window.__*` 上的登录方法等 | 删掉，脚本从已登录状态开始；**不可豁免** |
 | `REVIEW_RAW_MISSING` | 最新一轮缺某轴原文 | 用 Skill 工具重新调用 code-review |
-| `REVIEW_SOURCE_MISMATCH` / `REVIEW_SOURCE_STALE` | 已定位来源的原文与最终返回不同，或最终返回时间早于当前 collect | 旧轮次可按真实最终返回同轮纠偏；有 challenge 的新协议按新轮次重新审查，不得改原文或重算凭据 |
+| `REVIEW_SOURCE_MISMATCH` / `REVIEW_SOURCE_STALE` | 已定位来源的原文与最终返回不同，或最终返回时间早于当前 collect | 禁止同轮改写原文或重算凭据；须基于最新审查包按新轮次重新审查 |
+| `MISSING_REVIEW_CHALLENGE` | 审查阶段缺少或损坏 `_qa/review-challenge.json` | 重新运行 `review-package collect` 生成 challenge 后走双轴审查并 `seal` |
 | `REVIEW_REINPUT_MISSING` | 复审子代理实际输入缺待复核编号 | 把编号与理由真正交给对应轴复审 |
 | `REVIEW_RAW_UNNUMBERED` | 最新一轮原文没有规范编号也没写「无发现」 | 多半是绕过了 code-review 技能；用 Skill 工具调用它重新审查 |
 | `RECONCILIATION_STALE` | `_qa/reconciliation.md` 缺失或与当前执行记录不一致 | 重跑 acceptance，重新 collect 并复审 |
@@ -318,13 +319,13 @@ GLOSSARY.md 的改动开工前已存在，与本特性无关。
 | `SUPERSEDED` | 审查中 live 工作区偏移当轮快照 | 重新 collect 并在双轴全部达终态前冻结输入 |
 | `FINDING_ID_COLLISION` | 跨轮同编号复用不同语义或撞号保留区 | 按 challenge 的 `nextIds` 分配新编号 |
 
-另有一类预检：`qa-check` 在 `plan` 与 `review` 阶段检测 Claude Code 个人级同名技能，流程技能同名且内容不同时判 BLOCKED；有 challenge 的新轮次按证据判定来源，宿主声明只作说明；无 challenge 的旧轮次仍按声明兼容。示例编号（演示用的 `[P-M1]` 等）不建档复审，真实缺陷漏复审与时间倒挂证据仍会被拦截。
+另有一类预检：`qa-check` 在 `plan` 与 `review` 阶段检测 Claude Code 个人级同名技能，流程技能同名且内容不同时判 BLOCKED；审查统一按凭据与转录证据判定来源，宿主声明只作说明。示例编号（演示用的 `[P-M1]` 等）不建档复审，真实缺陷漏复审与时间倒挂证据仍会被拦截。
 
 NOTE 不改变结果，但值得看：
 
 - `SYNTHETIC_INPUT_IN_SCRIPT`：页面内用了 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值、`.setState(` 或访问 `window.__*`。合法用途是读状态或构造前置条件；仅保存原始 `fetch` 引用不算，对账表会标「非真实输入」。
 - `RESPONSE_INJECTION_IN_SCRIPT`：脚本替换或拦截了网络响应（`window.fetch` 赋值、路由拦截与 fulfill、`cy.intercept`、MSW 处理器）。合法用途是构造前端前置或故障态；对账表会标「响应注入」，这些行的断言只能写端侧结果，核心链路另需真实链路冒烟。
-- 来源核验：有 challenge 的新轮次先校验两轴 `.source.json`（nonce、哈希、轮次、轴、时间），再用同 nonce 的 Claude Code 转录核对哈希行；凭据缺失、格式错误或自述时间早于 collect 只给 NOTE，哈希或结构矛盾 FAIL，nonce 不符 BLOCKED；自述凭据缺复审编号只给 NOTE，Claude 转录实际输入缺编号仍 FAIL。无 challenge 的旧轮次沿用全等比对：明确原文失真、复审输入缺编号或最终返回早于 collect 会阻断；无法关联轮次、读取转录或确认事件时间时只给「来源未核验／来源时间未核验」NOTE，交人工。没有 Skill 调用记录也只提示；模型差异不读取、不比较、不提示。
+- 来源核验：统一按 challenge 与两轴 `.source.json`（nonce、哈希、轮次、轴、时间）校验，再用同 nonce 的 Claude Code 转录核对哈希行；缺或损坏 challenge 报 `MISSING_REVIEW_CHALLENGE`，凭据缺失、格式错误或自述时间早于 collect 只给 NOTE，哈希或结构矛盾 FAIL，nonce 不符 BLOCKED；自述凭据缺复审编号只给 NOTE，Claude 转录实际输入缺编号仍 FAIL；没有 Skill 调用记录也只提示；模型差异不读取、不比较、不提示。
 
 ---
 

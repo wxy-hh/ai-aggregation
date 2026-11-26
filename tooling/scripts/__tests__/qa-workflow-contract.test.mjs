@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { CURRENT_SCHEMA } from '../qa-check.mjs';
 
 const paths = {
@@ -390,7 +390,7 @@ test('code-review 定制段包含规范来源、审查绑定与来源纠偏', as
     assert.match(text, /不得为满足字数限制省略/);
     assert.match(text, /QA_REVIEW_BINDING/);
     assert.match(text, /不读取、比较或提示模型差异/);
-    assert.match(text, /同轮纠偏/);
+    assert.match(text, /不允许同轮原文纠偏|不再允许同轮原文纠偏/);
     assert.match(text, /待复核编号/);
   }
 });
@@ -633,7 +633,7 @@ test('[LH-TC07] 正本写明宿主无关凭据协议与审查方式说明字段'
     assert.match(boundary, /转录（强）/, file);
     assert.match(boundary, /自述凭据（弱）/, file);
     assert.match(boundary, /未核验（人工）/, file);
-    assert.match(boundary, /无 challenge 的旧轮次/, file);
+    assert.match(boundary, /MISSING_REVIEW_CHALLENGE/, file);
   }
   await eachMatch([...workflowPaths, '.claude/skills/code-review/SKILL.md'], /宿主=/);
 });
@@ -684,13 +684,13 @@ test('code-review 技能要求子代理自写原文并 seal，主代理不得转
   }
 });
 
-test('新协议取消同轮纠偏且旧轮次明确保留', async () => {
+test('统一 challenge 单轨协议禁止同轮原文纠偏且写明缺 challenge 阻断', async () => {
   for (const file of [...codeReviewPaths, ...workflowPaths]) {
     const content = await read(file);
-    assert.match(content, /新协议不再允许同轮原文纠偏|新协议不得改原文或重算凭据/, file);
+    assert.match(content, /不再允许同轮原文纠偏|不允许同轮原文纠偏|不得改原文或重算凭据/, file);
   }
   for (const file of codeReviewPaths) {
-    assert.match(await read(file), /无 challenge 的旧轮次仍按旧规则[^\n]*同轮纠偏/, file);
+    assert.match(await read(file), /MISSING_REVIEW_CHALLENGE/, file);
   }
 });
 
@@ -724,9 +724,8 @@ test('工作流文档与安装模板同步凭据协议措辞', async () => {
   }
   assert.match(guide, /review-challenge\.json|review-package seal/);
   assert.match(guide, /自述凭据（弱）/);
-  assert.match(guide, /有 challenge 时子代理自写并 seal/);
-  assert.match(guide, /旧轮次由主代理逐字落盘/);
-  assert.match(guide, /旧轮次可按真实最终返回同轮纠偏/);
+  assert.match(guide, /由子代理自写原文并 `seal`/);
+  assert.match(guide, /MISSING_REVIEW_CHALLENGE/);
   assert.match(root, /review-package seal/);
   assert.match(claudeTemplate, /review-package seal/);
   assert.match(glossary, /ReviewChallenge/);
@@ -734,12 +733,17 @@ test('工作流文档与安装模板同步凭据协议措辞', async () => {
   assert.match(glossary, /SourceVerificationStrength/);
 });
 
-test('qa-check 提示把逐字纠偏限定在旧轮次，新协议按新轮次重审', async () => {
-  const qaCheck = await read('tooling/scripts/qa-check.mjs');
-  assert.match(qaCheck, /旧轮次可按该轮子代理的真实最终返回逐字纠正当轮原文/);
-  assert.match(qaCheck, /有 challenge 的新协议按新轮次重新审查/);
-  assert.match(qaCheck, /有 challenge 的新协议由子代理自写原文并 seal/);
-  assert.doesNotMatch(qaCheck, /只能按该轮子代理的真实最终返回逐字纠正当轮原文/);
+test('qa-check 提示禁止同轮改写或重算凭据，缺 challenge 时阻断为 MISSING_REVIEW_CHALLENGE', async () => {
+  const [provenance, triage] = await Promise.all([
+    read('tooling/scripts/qa-check/provenance.mjs'),
+    read('tooling/scripts/qa-check/review-triage.mjs'),
+  ]);
+  const combined = `${provenance}\n${triage}`;
+  assert.match(combined, /凭据不得由主代理改写或重算/);
+  assert.match(combined, /不得自行补写原文或编号/);
+  assert.match(combined, /MISSING_REVIEW_CHALLENGE/);
+  assert.match(combined, /无 challenge 旧双轨已日落/);
+  assert.doesNotMatch(combined, /只能按该轮子代理的真实最终返回逐字纠正当轮原文|旧轮次可按该轮子代理的真实最终返回/);
 });
 
 test('工具脚本与安装模板保持逐字一致且新测试复用既有接缝', async () => {
@@ -1106,7 +1110,22 @@ test('[v2.2-P2-TC10-2] 核心脚本保持模板逐字一致、零外部依赖与
   }
   const check = await read('tooling/scripts/qa-check.mjs');
   assert.match(check, /export async function checkFeature/);
-  assert.doesNotMatch(check, /from\s+['"]\.\/qa-check\//);
+  const [srcModules, tplModules] = await Promise.all([
+    readdir('tooling/scripts/qa-check').then((names) => names.filter((n) => n.endsWith('.mjs')).sort()),
+    readdir('.claude/skills/setup-qa-workflow/templates/qa-check').then((names) => names.filter((n) => n.endsWith('.mjs')).sort()),
+  ]);
+  assert.deepEqual(tplModules, srcModules, 'qa-check 子模块目录与模板不一致');
+  for (const mod of srcModules) {
+    const [toolMod, tplMod] = await Promise.all([
+      read(`tooling/scripts/qa-check/${mod}`),
+      read(`.claude/skills/setup-qa-workflow/templates/qa-check/${mod}`),
+    ]);
+    assert.equal(tplMod, toolMod, `qa-check/${mod} 与模板不一致`);
+    assert.doesNotMatch(tplMod, /@repo\/web|AI 聚合平台|test_user/, `qa-check/${mod} 模板含本仓私货`);
+    for (const match of tplMod.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      assert.ok(match[1].startsWith('node:') || match[1].startsWith('.'), `qa-check/${mod} 引入外部依赖 ${match[1]}`);
+    }
+  }
   const readme = await read('tooling/scripts/README.md');
   for (const token of ['snapshotHash', 'dispatchedAt', 'sealAttempts', 'diffBytes', 'repairAndWaitMs', 'assertNoRateLimit', 'cropPngViewport', 'DESIGN_ROUTE_UNREGISTERED']) {
     assert.match(readme, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `README 缺少 ${token}`);

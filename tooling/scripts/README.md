@@ -79,7 +79,7 @@ pnpm infra:logs
 
 ### qa-check.mjs
 
-通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查；`gate-plan-*` 与 `gate-acceptance-*` 门禁日志必须经 `qa-run` 直接调用 `node .../qa-check.mjs` 生成，快捷方式生成的 argv 不会被门禁识别。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包（含 `# script:` 头字段与 `SCRIPT_DIR`/变量赋值闭包）、审查来源、Claude Code 0 子代理硬拦截（`REVIEW_PROVENANCE_UNVERIFIED`）与交付验证事件时间；有 challenge 的新轮次校验 `.source.json` 并输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工）），无 challenge 的旧轮次沿用全等比对；核对 `_qa/round-snapshots/r<n>/manifest.json`（审查途中修改代码/术语/`spec.md` 即报 `SUPERSEDED`）；支持 `QA Review Coverage: 1|2`（v2 在 `acceptance` 阶段生成按过程脚本/测试聚合的 `reviewUnits`，未改动存量非高风险回归标 `sampled`，`r2+` 同哈希已核实单元自动标 `inherited`）；全版本要求源码引用命中目标行前后 `±5` 行真实测试或断言谓词；检测跨轮重复起号冲突（`FINDING_ID_COLLISION`）；默认自动上限收紧为 `r2`（超过或达上限未闭环时输出 `暂停终态: WAITING_HUMAN` / `PACKAGE_INVALID` / `WAITING_INFRA` 与人工决策包）；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
+通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查；`gate-plan-*` 与 `gate-acceptance-*` 门禁日志必须经 `qa-run` 直接调用 `node .../qa-check.mjs` 生成，快捷方式生成的 argv 不会被门禁识别。实现按 `OPT-14` 拆分为 `tooling/scripts/qa-check/` 下 6 个无环子模块（`plan.mjs`、`script-scan.mjs`、`provenance.mjs`、`spec-coverage.mjs`、`acceptance.mjs`、`review-triage.mjs`）+ 薄入口 `qa-check.mjs`。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包（含 `# script:` 头字段与 `SCRIPT_DIR`/变量赋值闭包）、审查来源、Claude Code 0 子代理硬拦截（`REVIEW_PROVENANCE_UNVERIFIED`）与交付验证事件时间；统一实行 challenge 单轨协议，缺失或损坏 `_qa/review-challenge.json` 时阻断为 `MISSING_REVIEW_CHALLENGE`，有效 challenge 下校验 `.source.json` 并输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工））；核对 `_qa/round-snapshots/r<n>/manifest.json`（审查途中修改代码/术语/`spec.md` 即报 `SUPERSEDED`）；支持 `QA Review Coverage: 1|2`（v2 在 `acceptance` 阶段生成按过程脚本/测试聚合的 `reviewUnits`，未改动存量非高风险回归标 `sampled`，`r2+` 同哈希已核实单元自动标 `inherited`）；全版本要求源码引用命中目标行前后 `±5` 行真实测试或断言谓词；检测跨轮重复起号冲突（`FINDING_ID_COLLISION`）；默认自动上限收紧为 `r2`（超过或达上限未闭环时输出 `暂停终态: WAITING_HUMAN` / `PACKAGE_INVALID` / `WAITING_INFRA` 与人工决策包）；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
 
 ### review-package.mjs
 
@@ -109,7 +109,7 @@ Schema 4 的 Spec 审查覆盖清单与原文校验共享纯函数模块：`spec
 
 ### 工具测试
 
-运行 `node --test 'tooling/scripts/__tests__/*.test.mjs'` 执行全部 Node 原生工具测试，运行 `pnpm exec eslint tooling/scripts` 检查脚本规范。修改工具或安装模板后同时检查五个核心工具与 `qa-browser-helper.mjs` 对应模板的逐字一致性。
+运行 `node --test 'tooling/scripts/__tests__/*.test.mjs'` 执行全部 Node 原生工具测试，运行 `pnpm exec eslint tooling/scripts` 检查脚本规范。修改工具或安装模板后同时对五个核心工具、`qa-browser-helper.mjs` 与 `tooling/scripts/qa-check/` 子模块目录进行递归逐字节一致性校验。
 
 ## 使用前
 

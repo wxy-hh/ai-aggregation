@@ -43,7 +43,7 @@ disable-model-invocation: true
 2. 从 `templates/prompt-shortcuts.md` 复制思维快捷键；已有文件跳过。
 3. 向真实 `CLAUDE.md` 或 `AGENTS.md` 注入 `templates/claude-qa-directive.md`，不清空其他段落，不直接编辑符号链接。
 4. 按 `templates/skill-customizations.md` 幂等注入 `to-spec`、`to-tickets`、`implement`、`implement-spec`、`code-review`、`handoff`、`tdd`、`pr`、`diagnosing-bugs`、`resolving-merge-conflicts` 和 issue tracker 的项目约定。
-5. 将 `templates/qa-check.mjs`、`templates/review-package.mjs`、`templates/qa-run.mjs`、`templates/qa-spec-review.mjs` 与 `templates/qa-preflight.mjs` 复制到 `tooling/scripts/`；`templates/qa-browser-helper.mjs` 也复制到同一目录，视觉目标原语按仓库薄辅助模块契约使用。不增加 npm 依赖，不得修改宿主 package.json，不添加任何 scripts；核心工具与辅助模块直接由 Node 调用，新增纯函数 module 与辅助模块也必须同步。
+5. 将 `templates/qa-check.mjs`、`templates/qa-check/` 子模块目录（`plan.mjs`、`script-scan.mjs`、`provenance.mjs`、`spec-coverage.mjs`、`acceptance.mjs`、`review-triage.mjs`）、`templates/review-package.mjs`、`templates/qa-run.mjs`、`templates/qa-spec-review.mjs` 与 `templates/qa-preflight.mjs` 复制到 `tooling/scripts/`（保持 `qa-check/` 子目录结构）；`templates/qa-browser-helper.mjs` 也复制到同一目录，视觉目标原语按仓库薄辅助模块契约使用。不增加 npm 依赖，不得修改宿主 package.json，不添加任何 scripts；核心工具与辅助模块直接由 Node 调用，新增纯函数 module 与辅助模块也必须同步。
 6. 确保 `.scratch/` 被忽略；按用户选择设置 `.claude/skills/` 入库规则，仅忽略本地配置和临时 Worktree。
 7. 创建 `docs/handoff/.gitkeep`（目录不存在时）。不得新增 PreToolUse、Stop、SessionStart 或 Git Hook。
 

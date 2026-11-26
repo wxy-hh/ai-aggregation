@@ -15,7 +15,20 @@ export const PLACEHOLDER_ID_EXAMPLE = /(?:仅作|后续)?(?:真实缺陷的)?编
 const COVERAGE_HEADING = /^## 对账覆盖\s*$/;
 const CASE_ASSERTION_ID = /^TC\d+-\d+$/;
 const SCRIPTED_SEAMS = new Set(['browser', 'api']);
-const PREDICATE_KEYWORDS = /\b(?:check|expect|it|test|describe|strictEqual|deepStrictEqual|notEqual|toBe|toEqual|toMatch|toContain|toBeVisible|toHaveText|toHaveCount)\s*(?:\(|\.)|\bassert\s*(?:\.\s*\w+|\()|\bprocess\.exitCode\s*=(?!\s*0\b)|\bprocess\.exit\s*\((?!\s*0\b)|\bthrow\s+new\b/i;
+export const PREDICATE_KEYWORDS = /\b(?:check|expect|it|test|describe|strictEqual|deepStrictEqual|notEqual|toBe|toEqual|toMatch|toContain|toBeVisible|toHaveText|toHaveCount)\s*(?:\(|\.)|\bassert\s*(?:\.\s*\w+|\()|\bprocess\.exitCode\s*=(?!\s*0\b)|\bprocess\.exit\s*\((?!\s*0\b)|\bthrow\s+new\b/i;
+export const REREVIEW_STATUS_PATTERN = /(?:已修|未修|修错|改档成立|改档不成立|维持)/;
+
+/** 判断源码或测试文本中是否包含除注释与 import 外的有效断言谓词 */
+export function hasPredicateInText(text) {
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^(?:\/\/|\/\*|\*|\*\/|#)/.test(trimmed)) continue;
+    if (/^import\b/.test(trimmed)) continue;
+    if (PREDICATE_KEYWORDS.test(trimmed)) return true;
+  }
+  return false;
+}
 
 /** 判断审查原文是否表达「无发现」及其常见中文否定变体 */
 export function hasNoFinding(text) {

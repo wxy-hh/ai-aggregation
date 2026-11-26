@@ -45,7 +45,7 @@
 3. Worktree 不隔离数据库、Redis、端口、上游额度或测试账号，高耦合任务回退串行。
 4. `qa-check.mjs` 的 `CURRENT_SCHEMA = 4`，只接受 Schema 4；其他或未声明的 Schema 报 `UNSUPPORTED_SCHEMA`，按 Schema 4 结构重建，不迁移历史产物。
 5. 「自述凭据（弱）」只防跨轮串包与漏执行，不防恶意主代理自导自演；弱档下人工终审需重点对照 `review/` 原文、分流表与默认驳回清单，或按需用 `/retro` 抽查宿主原生会话。
-6. 审查来源主路径是宿主无关的凭据协议（ADR-0048、ADR-0065）：`collect` 发放 challenge，子代理自写原文并由 `review-package seal` 生成 `.source.json`，`qa-check` 按证据分级——同 nonce 的 Claude Code 转录为「转录（强）」，只有凭据为「自述凭据（弱）」，都没有为「未核验（人工）」；若 Claude Code 主会话目录可读且存在本项目主会话转录，却无 `code-review` 调用也无同 nonce 子代理转录而自称为 Claude `subagent`，阻断为 `REVIEW_PROVENANCE_UNVERIFIED`。只读探索型代理不能担任审查者；Codex 等无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce seal，主代理不得自动启动无头审查者。无 challenge 的旧轮次走旧逻辑；个人级同名技能检测在 plan 与 review 执行，流程技能同名且内容不同时 BLOCKED。
+6. 审查来源统一实行宿主无关的 challenge 单轨凭据协议（ADR-0048、ADR-0065、OPT-14）：`collect` 发放 challenge，子代理自写原文并由 `review-package seal` 生成 `.source.json`，`qa-check` 按证据分级——同 nonce 的 Claude Code 转录为「转录（强）」，只有凭据为「自述凭据（弱）」，都没有为「未核验（人工）」；若 Claude Code 主会话目录可读且存在本项目主会话转录，却无 `code-review` 调用也无同 nonce 子代理转录而自称为 Claude `subagent`，阻断为 `REVIEW_PROVENANCE_UNVERIFIED`。只读探索型代理不能担任审查者；Codex 等无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce seal，主代理不得自动启动无头审查者。缺少或损坏 `_qa/review-challenge.json` 时直接阻断为 `MISSING_REVIEW_CHALLENGE`；个人级同名技能检测在 plan 与 review 执行，流程技能同名且内容不同时 BLOCKED。
 
 ## 四、特性目录（Schema 4）
 

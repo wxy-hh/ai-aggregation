@@ -1,9 +1,9 @@
 # QA Workflow 联合审计优化计划与进度追踪（2026-11-22）
 
 > **生成时间**：2026-11-22
-> **最近更新**：2026-11-26（`v2.2` Phase 1 已落地 `07ef09d`，待发布验收；当前推进 Phase 2，继续执行 Phase 2.5/3 全清零路线）
+> **最近更新**：2026-11-26（`v2.2` Phase 1 已落地 `07ef09d`、Phase 2 已落地 `d463e90`，均待发布验收；当前推进 Phase 2.5 `OPT-14`，继续执行 Phase 3 发布 dogfood 路线）
 > **来源**：主仓 Swarm 四路源码审计 + 外部独立仓架构审计双报告交叉核验（经 7 轮 `/grill-me` 决策收敛）+ 四特性真实业务复盘对抗审查（`ADR-0065`，经 5 轮 `/grill-me` 决策收敛）+ `.scratch/tools-workbench-ia-migration` 实跑复盘（经 8 轮 `/grill-me` 拍板）
-> **当前状态**：**`v2.2` Phase 1 已落地 `07ef09d`，待发布验收；当前推进 Phase 2（`.scratch/qa-workflow-v2-2-phase2/`，标准车道，尚未完成独立审查与人工终审）**；早期 Phase 1（`e4e9c0d`）、Phase 2（`9b51c32`）与 `v2.1 Batch 1`（`1b31f11`，`ADR-0065`）已落地；Step 0 已将 `/tools` 业务改动隔离至 `feat/tools-workbench-ia-migration`（`b8da019`），Phase 2.5 与 Phase 3 尚未开始。
+> **当前状态**：**`v2.2` Phase 1（`07ef09d`）与 Phase 2（`d463e90`）已落地提交，均待发布验收；当前推进 Phase 2.5（`.scratch/qa-workflow-v2-2-opt14/`，标准车道 `OPT-14`，尚未完成独立审查与人工终审）**；早期 Phase 1（`e4e9c0d`）、Phase 2（`9b51c32`）与 `v2.1 Batch 1`（`1b31f11`，`ADR-0065`）已落地；Step 0 已将 `/tools` 业务改动隔离至 `feat/tools-workbench-ia-migration`（`b8da019`），Phase 3 尚未开始。
 > **关联文档**：`docs/reports/qa-workflow-evolution-report.md`、`docs/plans/qa-workflow-backlog.md`、`docs/adr/0065-qa-workflow-v2-review-ergonomics.md`、`docs/reports/qa-wf-02-baseline-2026-11-25.md`、`docs/plans/2026-11-25-qa-workflow-v2-first-principles-redesign.md`、`docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`、`docs/plans/kimi-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`
 
 ---
