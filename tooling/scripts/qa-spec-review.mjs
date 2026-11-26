@@ -10,6 +10,7 @@ export const SPEC_REVIEW_SKELETON_FILE = '_qa/spec-review-skeleton.md';
 export const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
 export const HAS_FINDING_ID = new RegExp(FINDING_ID_PATTERN.source);
 export const NO_FINDING_AFTER_ID = /^(?:\*\*|`)?\s*[:：]?\s*无(?:新增|新)?(?:审查)?(?:发现|编号)/;
+export const PLACEHOLDER_ID_EXAMPLE = /(?:仅作|后续)?(?:真实缺陷的)?编号示例/;
 
 const COVERAGE_HEADING = /^## 对账覆盖\s*$/;
 const CASE_ASSERTION_ID = /^TC\d+-\d+$/;
@@ -54,8 +55,13 @@ export function isRequiredSpecRow(row) {
   );
 }
 
-/** 由对账表内部行生成稳定、可移植的 Spec 审查清单（支持 v1 与 v2） */
-export function specReviewChecklistDocument(table, { version = SPEC_REVIEW_CHECKLIST_VERSION } = {}) {
+const UNIT_STATUS_VALUES = new Set(['required', 'sampled', 'inherited']);
+
+/** 由对账表内部行生成稳定、可移植的 Spec 审查清单（支持 v1 与 v2，并可选附加分组 reviewUnits） */
+export function specReviewChecklistDocument(
+  table,
+  { version = SPEC_REVIEW_CHECKLIST_VERSION, reviewUnits } = {},
+) {
   if (!SUPPORTED_CHECKLIST_VERSIONS.has(version)) {
     throw new Error(`不支持的 Spec 审查清单版本：${version}`);
   }
@@ -74,17 +80,33 @@ export function specReviewChecklistDocument(table, { version = SPEC_REVIEW_CHECK
         ...base,
         priority: String(row.priority ?? 'P1'),
         required: typeof row.required === 'boolean' ? row.required : isRequiredSpecRow(row),
+        ...(row.samplingReason ? { samplingReason: String(row.samplingReason) } : {}),
       };
     }
     return base;
   });
-  return `${JSON.stringify({ version, rows }, null, 2)}\n`;
+  const payload = Array.isArray(reviewUnits) ? { version, rows, reviewUnits } : { version, rows };
+  return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
-/** 生成 v2 预填 Markdown 骨架，减轻子代理手抄负担 */
+/** 生成 v2 预填 Markdown 骨架，按 reviewUnits 合并必审单元并拆分抽检与继承项 */
 export function specReviewSkeletonDocument(checklist) {
-  const requiredRows = checklist.rows.filter((row) => (checklist.version === SPEC_REVIEW_CHECKLIST_V2 ? row.required : true));
-  const optionalRows = checklist.rows.filter((row) => checklist.version === SPEC_REVIEW_CHECKLIST_V2 && !row.required);
+  const rowMap = new Map(checklist.rows.map((row) => [row.id, row]));
+  const units = Array.isArray(checklist.reviewUnits) && checklist.reviewUnits.length ? checklist.reviewUnits : null;
+  const requiredUnits = units
+    ? units.filter((unit) => unit.verificationStatus === 'required')
+    : checklist.rows
+        .filter((row) => (checklist.version === SPEC_REVIEW_CHECKLIST_V2 ? row.required : true))
+        .map((row) => ({
+          rowIds: [row.id],
+          sourceCandidates: row.sourceCandidates,
+          changed: row.changed,
+        }));
+  const inheritedUnits = units ? units.filter((unit) => unit.verificationStatus === 'inherited') : [];
+  const sampledIds = units
+    ? new Set(units.filter((unit) => unit.verificationStatus === 'sampled').flatMap((unit) => unit.rowIds))
+    : new Set(checklist.rows.filter((row) => checklist.version === SPEC_REVIEW_CHECKLIST_V2 && !row.required).map((row) => row.id));
+  const optionalRows = checklist.rows.filter((row) => sampledIds.has(row.id));
   const lines = [
     '# Spec 审查对账骨架（由 acceptance 预生成）',
     '',
@@ -94,20 +116,31 @@ export function specReviewSkeletonDocument(checklist) {
     '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
     '| --- | --- | --- | --- |',
   ];
-  for (const row of requiredRows) {
-    const sourceHint = row.sourceCandidates.length ? `\`${row.sourceCandidates[0]}:<行号>\` 待核对真实谓词` : '待填写源码位置与谓词摘要';
-    const changeHint = row.changed ? '待判（变更成立/变更不成立）' : '不适用';
-    lines.push(`| ${row.id} | 待判（已核实/未核实） | ${sourceHint} | ${changeHint} |`);
+  for (const unit of requiredUnits) {
+    const unitRows = unit.rowIds.map((id) => rowMap.get(id)).filter(Boolean);
+    const sourceCandidates = unit.sourceCandidates?.length
+      ? unit.sourceCandidates
+      : [...new Set(unitRows.flatMap((row) => row.sourceCandidates))];
+    const anyChanged = unitRows.some((row) => row.changed);
+    const sourceHint = sourceCandidates.length ? `\`${sourceCandidates[0]}:<行号>\` 待核对真实谓词` : '待填写源码位置与谓词摘要';
+    const changeHint = anyChanged ? '待判（变更成立/变更不成立）' : '不适用';
+    lines.push(`| ${unit.rowIds.join('、')} | 待判（已核实/未核实） | ${sourceHint} | ${changeHint} |`);
   }
   if (optionalRows.length) {
     const files = [...new Set(optionalRows.flatMap((row) => row.sourceCandidates))];
     lines.push(
       '',
       '## 抽检范围',
-      `- 本轮共 ${optionalRows.length} 条常规通过项无需逐行填表：${optionalRows.map((row) => row.id).join('、')}`,
+      `- 本轮共 ${optionalRows.length} 条常规或未改动存量通过项无需逐行填表：${optionalRows.map((row) => row.id).join('、')}`,
       `- 候选文件：${files.length ? files.map((file) => `\`${file}\``).join('、') : '按执行记录抽检对应测试文件'}`,
       '- 抽检结果：<请写出实际抽检的文件、用例及发现；无异常写无发现>',
     );
+  }
+  if (inheritedUnits.length) {
+    lines.push('', '## 继承未变单元（无需重填，自动沿用上轮已核实结论）');
+    for (const unit of inheritedUnits) {
+      lines.push(`- ${unit.rowIds.join('、')}（沿用 ${unit.inheritedFrom ?? '上轮已核实基线'}）`);
+    }
   }
   lines.push('');
   return lines.join('\n');
@@ -132,6 +165,19 @@ export function parseSpecReviewChecklist(text) {
     }
     if (value.version === SPEC_REVIEW_CHECKLIST_V2 && typeof row.required !== 'boolean') {
       throw new Error(`无效 v2 Spec 审查清单行（缺少布尔字段 required）：${row?.id ?? '未知 ID'}`);
+    }
+  }
+  if (value.reviewUnits !== undefined) {
+    if (!Array.isArray(value.reviewUnits)) {
+      throw new Error('无效 Spec 审查清单：reviewUnits 必须为数组');
+    }
+    for (const unit of value.reviewUnits) {
+      if (!unit || typeof unit.unitId !== 'string' || !Array.isArray(unit.rowIds) || !unit.rowIds.length
+        || unit.rowIds.some((id) => !CASE_ASSERTION_ID.test(id))
+        || !Array.isArray(unit.sourceCandidates)
+        || !UNIT_STATUS_VALUES.has(unit.verificationStatus)) {
+        throw new Error(`无效 Spec 审查单元：${unit?.unitId ?? '未知 unitId'}`);
+      }
     }
   }
   return value;
@@ -241,8 +287,8 @@ function hasPredicateInWindow(lines, targetLine, seam) {
   return PREDICATE_KEYWORDS.test(windowCodeLines(lines, targetLine, { excludeImports: true }).join('\n'));
 }
 
-/** 校验源码引用路径是否存在，且目标行前后 ±5 行窗口内命中真实测试或断言谓词 */
-export async function citationIsValid(root, featureDir, row, citation, cache) {
+/** 校验源码引用路径是否存在，且目标行前后 ±5 行窗口内命中真实测试或断言谓词；有快照时严格仅校验快照文件 */
+export async function citationIsValid(root, featureDir, row, citation, cache, { snapshotRoot = null } = {}) {
   const featureRel = root ? path.relative(root, featureDir).split(path.sep).join('/') : '';
   const normalizedCitation = normalizeCitationPath(citation.path, featureRel);
   const hasCandidates = row.sourceCandidates.length > 0;
@@ -253,9 +299,14 @@ export async function citationIsValid(root, featureDir, row, citation, cache) {
     }
   }
   const candidateRelatives = [...new Set([normalizedCitation, citation.path].filter(Boolean))];
-  const bases = hasCandidates
+  const snapshotBases = snapshotRoot
+    ? (hasCandidates
+        ? [path.join(snapshotRoot, SCRIPTED_SEAMS.has(row.seam) ? 'feature' : 'repo')]
+        : [path.join(snapshotRoot, 'feature'), path.join(snapshotRoot, 'repo')])
+    : null;
+  const bases = snapshotBases ?? (hasCandidates
     ? [SCRIPTED_SEAMS.has(row.seam) ? featureDir : root]
-    : [featureDir, root];
+    : [featureDir, root]);
 
   for (const base of bases) {
     if (!base || !Number.isInteger(citation.line) || citation.line < 1) continue;
@@ -272,6 +323,8 @@ export async function citationIsValid(root, featureDir, row, citation, cache) {
         if (citation.line <= lines.length && hasPredicateInWindow(lines, citation.line, row.seam)) {
           return true;
         }
+        // 快照文件存在但校验未通过时，严禁回退到工作区活文件
+        if (snapshotBases) return false;
       } catch {
         // 尝试下一个允许的来源根目录或路径形式
       }
@@ -285,7 +338,7 @@ function makeIssue(code, level, message, hint = '') {
 }
 
 /** 核对 Spec 审查原文对账覆盖完整性、谓词窗口引用真实性与抽检范围 */
-export async function specReviewCoverageIssues(root, featureDir, checklist, markdown) {
+export async function specReviewCoverageIssues(root, featureDir, checklist, markdown, { snapshotRoot = null } = {}) {
   const version = checklist.version ?? SPEC_REVIEW_CHECKLIST_VERSION;
   const issues = [];
   let coverage;
@@ -336,7 +389,7 @@ export async function specReviewCoverageIssues(root, featureDir, checklist, mark
       if (sourceValid) {
         sourceValid = false;
         for (const citation of citations) {
-          if (await citationIsValid(root, featureDir, row, citation, cache)) {
+          if (await citationIsValid(root, featureDir, row, citation, cache, { snapshotRoot })) {
             sourceValid = true;
             break;
           }
@@ -355,8 +408,16 @@ export async function specReviewCoverageIssues(root, featureDir, checklist, mark
     }
   }
 
+  const units = Array.isArray(checklist.reviewUnits) && checklist.reviewUnits.length ? checklist.reviewUnits : null;
+  const inheritedIds = new Set(units ? units.filter((u) => u.verificationStatus === 'inherited').flatMap((u) => u.rowIds) : []);
+  const sampledIds = new Set(units ? units.filter((u) => u.verificationStatus === 'sampled').flatMap((u) => u.rowIds) : []);
+
   const requiredRows = version === SPEC_REVIEW_CHECKLIST_V2
-    ? checklist.rows.filter((row) => row.required)
+    ? checklist.rows.filter((row) => (
+        units
+          ? !inheritedIds.has(row.id) && !sampledIds.has(row.id) && row.required
+          : row.required
+      ))
     : checklist.rows;
   const missing = requiredRows.map((row) => row.id).filter((id) => !seen.has(id));
   if (missing.length) {
@@ -364,10 +425,15 @@ export async function specReviewCoverageIssues(root, featureDir, checklist, mark
   }
 
   if (version === SPEC_REVIEW_CHECKLIST_V2) {
-    const optionalRows = checklist.rows.filter((row) => !row.required);
-    if (optionalRows.length) {
+    const optionalRows = checklist.rows.filter((row) => (
+      units
+        ? sampledIds.has(row.id)
+        : !row.required
+    ));
+    const uncoveredOptionalRows = optionalRows.filter((row) => !seen.has(row.id));
+    if (uncoveredOptionalRows.length) {
       const hasSamplingHeading = /^## 抽检范围\s*$/m.test(markdown);
-      const optionalFiles = [...new Set(optionalRows.flatMap((row) => row.sourceCandidates.map((item) => path.posix.basename(item))))];
+      const optionalFiles = [...new Set(uncoveredOptionalRows.flatMap((row) => row.sourceCandidates.map((item) => path.posix.basename(item))))];
       const samplingLines = samplingSection(markdown);
       const samplingText = samplingLines.join('\n');
       const hasValidSamplingHeading = hasSamplingHeading
@@ -381,7 +447,7 @@ export async function specReviewCoverageIssues(root, featureDir, checklist, mark
         issues.push(makeIssue(
           'SPEC_REVIEW_SAMPLING_MISSING',
           'BLOCKED',
-          `v2 清单含 ${optionalRows.length} 条常规通过项，但 Spec 原文缺少有效 ## 抽检范围 或未说明实际抽检结果`,
+          `v2 清单含 ${uncoveredOptionalRows.length} 条常规通过项，但 Spec 原文缺少有效 ## 抽检范围 或未说明实际抽检结果`,
           '在 Spec 审查原文补充 ## 抽检范围 填写抽检文件范围及结果，不得留空或保留骨架 <请写出...> 占位符',
         ));
       }
@@ -399,6 +465,7 @@ export async function validateReviewReportForSeal({
   markdown,
   pendingIds = [],
   checklist = null,
+  snapshotRoot = null,
 }) {
   const issues = [];
   if (!rawHasFindingOrNoFinding(markdown)) {
@@ -426,7 +493,7 @@ export async function validateReviewReportForSeal({
   }
 
   if (axis === 'spec' && checklist) {
-    issues.push(...await specReviewCoverageIssues(root, featureDir, checklist, markdown));
+    issues.push(...await specReviewCoverageIssues(root, featureDir, checklist, markdown, { snapshotRoot }));
   }
 
   return { ok: issues.length === 0, issues };

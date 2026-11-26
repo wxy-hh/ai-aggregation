@@ -76,7 +76,6 @@ test('正本、根规则、规划与实现技能及安装模板引用当前 Sche
     assert.match(content, new RegExp(`Schema ${CURRENT_SCHEMA}\\b`));
     assert.doesNotMatch(content, /(新计划|新生成).{0,12}Schema [12]\b/);
   }
-  assert.ok(documents[0].trim().split('\n').length <= 180);
 });
 
 test('规划器声明 Seam、交付命令、修复轮与计划冻结（TC12）', async () => {
@@ -95,7 +94,7 @@ test('门禁只在任务首轮与宣称交付时完整声明（TC11）', async (
     assert.match(content, /宣称交付/);
     assert.match(content, /其他回合不重复/);
   }
-  assert.ok(root.trim().split('\n').length <= 69);
+  assert.ok(root.trim().split('\n').length <= 65);
 });
 
 test('机器校验保留 PASS 输出（TC11、TC12、TC13）', async () => {
@@ -564,11 +563,11 @@ test('[HR-TC07-6] 原文不得加头注或还原转义，说明写进 review-rep
   await eachMatch(codeReviewPaths, /不得在原文中加头注、还原转义.*review-report/s);
 });
 
-test('[HR-TC07-7] 复审输入含本轮修复改过的文件，不再要求新增修复 diff', async () => {
+test('[ADR-0066] 取代 HR-TC07-7：复审启用相邻快照机器 delta.diff 并保留全量快照基线', async () => {
   for (const file of [...workflowPaths, ...codeReviewPaths]) {
     const text = await read(file);
-    assert.match(text, /本轮修复改过的文件/, file);
-    assert.doesNotMatch(text, /上一次 collect 之后新增的修复 diff|新增修复 diff/, file);
+    assert.match(text, /review-package-delta\.diff/, file);
+    assert.match(text, /全量/, file);
   }
 });
 
@@ -780,8 +779,6 @@ test('ADR-0057 正本与安装正本同步对账覆盖、视觉目标、空证�
       assert.match(content, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), file);
     }
   }
-  const workflow = await read(paths.workflow);
-  assert.ok(workflow.trim().split('\n').length <= 180);
 });
 
 test('ADR-0057 审查与实现技能落实降噪、失败暂停和最终时序', async () => {
@@ -921,11 +918,128 @@ test('ADR-0065 v2.1 正本、模板与技能同步对账 v2、双指纹免重跑
     ]) {
       assert.match(content, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), file);
     }
-    assert.ok(content.trim().split('\n').length <= 180, `${file} 超过 180 行契约锁`);
   }
   const setup = await read(paths.setup);
   assert.match(setup, /templates\/qa-preflight\.mjs/);
   const reviewSkill = await read('.claude/skills/code-review/SKILL.md');
   assert.match(reviewSkill, /抽检范围/);
   assert.match(reviewSkill, /±5/);
+});
+
+test('[v2.2-TC01-1] ADR-0066 确立上限 r2、三暂停终态、DESIGN 分层并取代 HR-TC07-7 与 180 行上限', async () => {
+  const adr = await read('docs/adr/0066-qa-workflow-v2-2-immutable-review-and-incremental-closure.md');
+  for (const token of [
+    'HR-TC07-7',
+    'WAITING_HUMAN',
+    'PACKAGE_INVALID',
+    'WAITING_INFRA',
+    'SUPERSEDED',
+    'FINDING_ID_COLLISION',
+    'reviewUnits',
+    '--allow-manual-round',
+    '180 行',
+    'DESIGN.md',
+  ]) {
+    assert.match(adr, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('[v2.2-TC01-2] 正本、模板与核心技能同步 Batch 0 冻结屏障、错误路由、r2 上限与删无限重试', async () => {
+  for (const file of [
+    ...workflowPaths,
+    ...codeReviewPaths,
+    paths.implement,
+    paths.implementSpec,
+    paths.guide,
+  ]) {
+    const content = await read(file);
+    assert.doesNotMatch(content, /直至打印\s*`?QA_REVIEW_RECEIPT`?/, `${file} 不得保留无限 seal 重试措辞`);
+    assert.match(content, /WAITING_HUMAN/, file);
+    assert.match(content, /--allow-manual-round|人工显式授权|人工授权/, file);
+  }
+  for (const file of [...workflowPaths, ...codeReviewPaths]) {
+    const content = await read(file);
+    assert.match(content, /SUPERSEDED/, file);
+    assert.match(content, /REVIEWER_EDITABLE/, file);
+    assert.match(content, /PACKAGE_INVALID/, file);
+    assert.match(content, /INFRA_UNAVAILABLE/, file);
+    assert.match(content, /FINDING_ID_COLLISION/, file);
+    assert.match(content, /scaffold-report/, file);
+    assert.match(content, /reviewUnits/, file);
+    assert.match(content, /--executor/, file);
+  }
+  for (const file of [paths.implement, paths.implementSpec]) {
+    const content = await read(file);
+    assert.match(content, /REVIEWER_EDITABLE/, file);
+    assert.match(content, /PACKAGE_INVALID/, file);
+    assert.match(content, /INFRA_UNAVAILABLE/, file);
+    assert.match(content, /WAITING_INFRA/, file);
+  }
+  const customizations = await read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md');
+  const implementSec = customizations.slice(customizations.indexOf('## 2.'), customizations.indexOf('## 3.'));
+  const implementSpecSec = customizations.slice(customizations.indexOf('## 3.'), customizations.indexOf('## 4.'));
+  for (const [label, sec] of [['implement 定制段', implementSec], ['implement-spec 定制段', implementSpecSec]]) {
+    assert.match(sec, /REVIEWER_EDITABLE/, label);
+    assert.match(sec, /PACKAGE_INVALID/, label);
+    assert.match(sec, /INFRA_UNAVAILABLE/, label);
+    assert.match(sec, /WAITING_INFRA/, label);
+  }
+  assert.match(await read(paths.workflow), /自动上限\s*1\s*轮/);
+  assert.match(await read(paths.workflowTemplate), /自动上限\s*1\s*轮/);
+});
+
+test('[v2.2-TC02-1] OPT-15 瘦身 CLAUDE 门禁段且 OPT-17 清零教学文档真机旧词与安装器技能清单', async () => {
+  for (const file of [paths.root, paths.claudeTemplate]) {
+    const content = await read(file);
+    assert.match(content, /自动上限\s*1\s*轮/);
+    assert.match(content, /WAITING_HUMAN/);
+  }
+  for (const teachFile of [
+    'docs/teach/qa-workflow/MISSION.md',
+    'docs/teach/qa-workflow/RESOURCES.md',
+    'docs/teach/qa-workflow/GLOSSARY.md',
+  ]) {
+    const text = await read(teachFile);
+    assert.doesNotMatch(text, /真机/, `${teachFile} 不得残留「真机」旧词`);
+    assert.match(text, /Playwright|标准车道|上限/, teachFile);
+  }
+  const setup = await read(paths.setup);
+  assert.match(setup, /diagnosing-bugs/);
+  assert.match(setup, /resolving-merge-conflicts/);
+});
+
+test('[v2.2-TC02-2] DESIGN.md 与 code-review 显式分层 S-H 阻断红线与 S-J 建议，不做前缀硬锁', async () => {
+  const design = await read('DESIGN.md');
+  assert.match(design, /审查分级指引/);
+  assert.match(design, /S-H/);
+  assert.match(design, /S-J/);
+  const reviewSkill = await read('.claude/skills/code-review/SKILL.md');
+  assert.match(reviewSkill, /真实产品行为|生命周期/);
+  assert.match(reviewSkill, /默认驳回/);
+  assert.doesNotMatch(reviewSkill, /机器硬锁所有\s*S-J/);
+});
+
+test('[v2.2-TC09-2] v2.2 四个核心工具脚本与安装模板逐字节一致且 README 同步新契约', async () => {
+  for (const name of ['qa-run.mjs', 'qa-check.mjs', 'qa-spec-review.mjs', 'review-package.mjs']) {
+    const [tool, template] = await Promise.all([
+      read(`tooling/scripts/${name}`),
+      read(`.claude/skills/setup-qa-workflow/templates/${name}`),
+    ]);
+    assert.equal(tool, template, `${name} 与安装模板不一致`);
+  }
+  const readme = await read('tooling/scripts/README.md');
+  for (const token of [
+    '--executor',
+    'round-snapshots',
+    'SUPERSEDED',
+    'review-package-delta.diff',
+    'review-brief.md',
+    'reviewUnits',
+    'scaffold-report',
+    'FINDING_ID_COLLISION',
+    '--allow-manual-round',
+    'WAITING_HUMAN',
+  ]) {
+    assert.match(readme, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `README.md 缺少契约 ${token}`);
+  }
 });

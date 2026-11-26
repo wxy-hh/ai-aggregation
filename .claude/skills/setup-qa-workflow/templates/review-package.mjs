@@ -17,10 +17,14 @@ import { devNull } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+  FINDING_ID_PATTERN,
+  NO_FINDING_AFTER_ID,
+  PLACEHOLDER_ID_EXAMPLE,
   SPEC_REVIEW_CHECKLIST_FILE,
   SPEC_REVIEW_CHECKLIST_V2,
   SPEC_REVIEW_SKELETON_FILE,
   parseSpecReviewChecklist,
+  splitMarkdownRow,
   validateReviewReportForSeal,
 } from './qa-spec-review.mjs';
 import { formatPreflightReport, runPreflight } from './qa-preflight.mjs';
@@ -31,6 +35,27 @@ const BINARY_EXTENSIONS = new Set([
   '.woff', '.woff2', '.ttf', '.otf', '.mp3', '.mp4', '.mov', '.avi', '.db', '.sqlite',
 ]);
 const UNKNOWN_HASH = Symbol('未知哈希');
+const MAX_AUTO_REVIEW_ROUND = 2;
+const ROUND_SNAPSHOTS_DIR = 'round-snapshots';
+const CONTRACT_DOCS = ['GLOSSARY.md', 'CLAUDE.md', 'DESIGN.md'];
+const BRIEF_MAX_BYTES = 2800;
+const PREDICATE_KEYWORDS = /\b(?:check|expect|it|test|describe|strictEqual|deepStrictEqual|notEqual|toBe|toEqual|toMatch|toContain|toBeVisible|toHaveText|toHaveCount)\s*(?:\(|\.)|\bassert\s*(?:\.\s*\w+|\()|\bprocess\.exitCode\s*=(?!\s*0\b)|\bprocess\.exit\s*\((?!\s*0\b)|\bthrow\s+new\b/i;
+const FINDING_PREFIXES = ['S-H', 'S-J', 'P-M', 'P-W', 'P-X'];
+const REREVIEW_STATUS_PATTERN = /(?:已修|未修|修错|改档成立|改档不成立|维持)/;
+const REVIEWER_EDITABLE_CODES = new Set([
+  'REVIEW_RAW_UNNUMBERED',
+  'FINDING_NOT_REREVIEWED',
+  'SPEC_REVIEW_COVERAGE_INVALID',
+  'SPEC_REVIEW_COVERAGE_UNKNOWN',
+  'SPEC_REVIEW_COVERAGE_DUPLICATE',
+  'SPEC_REVIEW_BINDING_MISMATCH',
+  'SPEC_REVIEW_INCOMPLETE',
+  'SPEC_PLAN_CHANGE_REJECTED',
+  'SPEC_PLAN_CHANGE_REVIEW_MISSING',
+  'SPEC_REVIEW_SOURCE_INVALID',
+  'SPEC_REVIEW_COVERAGE_MISSING',
+  'SPEC_REVIEW_SAMPLING_MISSING',
+]);
 // 特性目录内的机器状态目录：基线、开工前快照、审查包与调试截图，禁止手改
 export const QA_DIR = '_qa';
 // 每轮审查的挑战与子代理自写原文的凭据；文件名与 code-review 的落盘约定一致
@@ -276,49 +301,111 @@ function normalizePendingIds(value) {
   return [...new Set(String(value).split(/[\s,，]+/).map((item) => item.trim()).filter(Boolean))];
 }
 
+/** 扫描 review/ 目录内历史原文（可选限制 < upToRound），登记全量已占用编号与下一可用编号 */
+export async function scanHistoricalFindingIds(featureDir, { upToRound = null } = {}) {
+  const entries = await readdir(path.join(featureDir, REVIEW_DIR)).catch(() => []);
+  const roundFiles = [];
+  for (const entry of entries) {
+    const match = entry.match(/^r(\d+)-(standards|spec-axis)\.md$/);
+    if (!match) continue;
+    const round = Number(match[1]);
+    if (upToRound !== null && round >= upToRound) continue;
+    roundFiles.push({ round, axis: match[2] === 'standards' ? 'standards' : 'spec', relative: `${REVIEW_DIR}/${entry}` });
+  }
+  roundFiles.sort((left, right) => left.round - right.round || left.relative.localeCompare(right.relative));
+
+  const records = new Map();
+  const maxByPrefix = Object.fromEntries(FINDING_PREFIXES.map((prefix) => [prefix, 0]));
+  for (const file of roundFiles) {
+    const text = await readFile(path.join(featureDir, file.relative), 'utf8').catch(() => '');
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, lineIndex) => {
+      for (const match of line.matchAll(FINDING_ID_PATTERN)) {
+        const id = match[1];
+        const tail = line.slice(match.index + match[0].length);
+        if (NO_FINDING_AFTER_ID.test(tail) || PLACEHOLDER_ID_EXAMPLE.test(tail)) continue;
+        const prefixMatch = id.match(/^(S-[HJ]|P-[MWX])(\d+)$/);
+        if (prefixMatch) {
+          maxByPrefix[prefixMatch[1]] = Math.max(maxByPrefix[prefixMatch[1]] ?? 0, Number(prefixMatch[2]));
+        }
+        const entry = {
+          round: file.round,
+          axis: file.axis,
+          location: `${file.relative}:${lineIndex + 1}`,
+          line: line.trim(),
+        };
+        if (!records.has(id)) {
+          records.set(id, { id, firstRound: file.round, axis: file.axis, firstLine: entry.line, occurrences: [entry] });
+        } else {
+          records.get(id).occurrences.push(entry);
+        }
+      }
+    });
+  }
+  const nextIds = Object.fromEntries(FINDING_PREFIXES.map((prefix) => [prefix, `${prefix}${(maxByPrefix[prefix] ?? 0) + 1}`]));
+  return {
+    allIds: [...records.keys()],
+    records,
+    nextIds,
+  };
+}
+
+/** 构造带类型前缀的封存或打包错误，供调用方按错因精确分流 */
+function typedError(type, message) {
+  return new Error(`${type}：${message}`);
+}
+
 /** 子代理自写原文后封存：校验 challenge 并把最小凭据写到同名 .source.json */
 async function sealReview(repo, argument, args) {
   const { root, feature } = await resolveFeature(repo, argument);
   const flags = parseSealFlags(args);
   const round = normalizeRound(flags.round);
+  const roundNum = Number(round.slice(1));
   const axis = flags.axis;
-  if (axis !== 'standards' && axis !== 'spec') throw new Error(`seal 的 --axis 只能是 standards 或 spec，当前为 ${axis ?? '空'}`);
+  if (axis !== 'standards' && axis !== 'spec') {
+    throw typedError('PACKAGE_INVALID', `seal 的 --axis 只能是 standards 或 spec，当前为 ${axis ?? '空'}`);
+  }
   const fileName = `r${round.slice(1)}-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
   const requested = path.posix.normalize(String(flags.file ?? '').replaceAll(path.sep, '/'));
   const reportPath = `${REVIEW_DIR}/${fileName}`;
   if (requested !== reportPath) {
-    throw new Error(`seal 只接受本轮本轴原文路径：${reportPath}（收到 ${flags.file ?? '空'}）`);
+    throw typedError('PACKAGE_INVALID', `seal 只接受本轮本轴原文路径：${reportPath}（收到 ${flags.file ?? '空'}）`);
   }
   const reviewerKind = flags['reviewer-kind'];
   if (reviewerKind !== 'subagent' && reviewerKind !== 'external-session') {
-    throw new Error('seal 的 --reviewer-kind 只能是 subagent 或 external-session');
+    throw typedError('PACKAGE_INVALID', 'seal 的 --reviewer-kind 只能是 subagent 或 external-session');
   }
-  if (!flags.host?.trim()) throw new Error('seal 需要非空的 --host');
+  if (!flags.host?.trim()) throw typedError('PACKAGE_INVALID', 'seal 需要非空的 --host');
 
   const report = path.join(feature, reportPath);
   const info = await pathInfo(report);
   if (!info?.isFile() || info.size === 0) {
-    throw new Error(`原文不存在或为空：${reportPath}；请先写入完整审查内容再 seal`);
+    throw typedError('REVIEWER_EDITABLE', `原文不存在或为空：${reportPath}；请先写入完整审查内容再 seal`);
   }
-  const challenge = await readChallenge(feature);
+  let challenge;
+  try {
+    challenge = await readChallenge(feature);
+  } catch (error) {
+    throw typedError('PACKAGE_INVALID', error.message);
+  }
   if (challenge.round !== round) {
-    throw new Error(`challenge 的轮次是 ${challenge.round}，与 seal 的 ${round} 不一致；请用当前轮次或重新 collect`);
+    throw typedError('PACKAGE_INVALID', `challenge 的轮次是 ${challenge.round}，与 seal 的 ${round} 不一致；请用当前轮次或重新 collect`);
   }
   if (challenge.feature !== featureRelative(root, feature)) {
-    throw new Error(`challenge 的特性路径 ${challenge.feature} 与当前特性不一致；请重新 collect`);
+    throw typedError('PACKAGE_INVALID', `challenge 的特性路径 ${challenge.feature} 与当前特性不一致；请重新 collect`);
   }
   // challenge 必须与当前审查包 manifest 绑定，防止手改或跨轮次复用
   let manifest;
   try {
     manifest = JSON.parse(await readFile(path.join(feature, QA_DIR, 'review-package.json'), 'utf8'));
   } catch {
-    throw new Error(`缺少 ${QA_DIR}/review-package.json；请先运行 collect`);
+    throw typedError('PACKAGE_INVALID', `缺少 ${QA_DIR}/review-package.json；请先运行 collect`);
   }
   if (challenge.treeDigest !== manifest.treeDigest) {
-    throw new Error('challenge 的 treeDigest 与当前审查包不一致；请重新 collect');
+    throw typedError('PACKAGE_INVALID', 'challenge 的 treeDigest 与当前审查包不一致；请重新 collect');
   }
   if (challenge.packagedAt !== manifest.packagedAt) {
-    throw new Error('challenge 的 packagedAt 与当前审查包不一致；请重新 collect');
+    throw typedError('PACKAGE_INVALID', 'challenge 的 packagedAt 与当前审查包不一致；请重新 collect');
   }
 
   const receiptPath = `${REVIEW_DIR}/${fileName.replace(/\.md$/, RECEIPT_SUFFIX)}`;
@@ -326,34 +413,74 @@ async function sealReview(repo, argument, args) {
   if (await fileExists(absoluteReceipt)) {
     const existing = await readFile(absoluteReceipt, 'utf8').then(JSON.parse, () => null);
     const nonceNote = existing?.nonce && existing.nonce !== challenge.nonce ? '，且 nonce 与当前 challenge 不一致' : '';
-    throw new Error(`凭据已存在：${receiptPath}${nonceNote}；seal 拒绝覆盖，需要修正请按新轮次重新审查`);
+    throw typedError('PACKAGE_INVALID', `凭据已存在：${receiptPath}${nonceNote}；seal 拒绝覆盖，需要修正请按新轮次重新审查`);
   }
 
   const content = await readFile(report);
+  const markdownText = content.toString('utf8');
   const hash = sha256(content);
   const pendingIds = flags['pending-ids'] ? normalizePendingIds(flags['pending-ids']) : [];
+
+  // 检查跨轮次编号碰撞：历史轮次已登记的编号不能在后续轮次作为新发现重新起号
+  const historical = await scanHistoricalFindingIds(feature, { upToRound: roundNum });
+  const collisions = [];
+  for (const line of markdownText.split(/\r?\n/)) {
+    for (const match of line.matchAll(FINDING_ID_PATTERN)) {
+      const id = match[1];
+      const tail = line.slice(match.index + match[0].length);
+      if (NO_FINDING_AFTER_ID.test(tail) || PLACEHOLDER_ID_EXAMPLE.test(tail)) continue;
+      if (historical.records.has(id) && !REREVIEW_STATUS_PATTERN.test(line)) {
+        collisions.push(`${id}（首次出现于 r${historical.records.get(id).firstRound}）`);
+      }
+    }
+  }
+  if (collisions.length) {
+    const suggested = FINDING_PREFIXES.map((p) => `${p}→${challenge.nextIds?.[p] ?? historical.nextIds[p]}`).join('、');
+    throw typedError(
+      'REVIEWER_EDITABLE',
+      `[FINDING_ID_COLLISION] 原文复用了历史轮次已登记编号且未标明复审状态：${[...new Set(collisions)].join('、')}；可用新起号起点：${suggested}`,
+    );
+  }
+
+  // 解析当轮快照根目录（存在时 seal 仅针对快照核对源码谓词）
+  const snapshotRel = challenge.snapshotDir ?? manifest.snapshotDir;
+  const snapshotRoot = snapshotRel && (await pathInfo(path.join(feature, snapshotRel)))?.isDirectory()
+    ? path.join(feature, snapshotRel)
+    : null;
+
   let checklist = null;
   if (axis === 'spec' && manifest.specReviewChecklist) {
     try {
-      const checklistRaw = await readFile(path.join(feature, SPEC_REVIEW_CHECKLIST_FILE), 'utf8');
+      const snapshotChecklistPath = snapshotRoot
+        ? path.join(snapshotRoot, 'feature', SPEC_REVIEW_CHECKLIST_FILE)
+        : null;
+      const checklistRaw = snapshotChecklistPath && await fileExists(snapshotChecklistPath)
+        ? await readFile(snapshotChecklistPath, 'utf8')
+        : await readFile(path.join(feature, SPEC_REVIEW_CHECKLIST_FILE), 'utf8');
       checklist = parseSpecReviewChecklist(checklistRaw);
     } catch (error) {
-      throw new Error(`封存前无法读取 Spec 审查清单：${error.message}`);
+      throw typedError('PACKAGE_INVALID', `封存前无法读取 Spec 审查清单：${error.message}`);
     }
   }
   const validation = await validateReviewReportForSeal({
     root,
     featureDir: feature,
     axis,
-    markdown: content.toString('utf8'),
+    markdown: markdownText,
     pendingIds,
     checklist,
+    snapshotRoot,
   });
   if (!validation.ok) {
+    const hasPackageIssue = validation.issues.some((item) => !REVIEWER_EDITABLE_CODES.has(item.code));
+    const category = hasPackageIssue ? 'PACKAGE_INVALID' : 'REVIEWER_EDITABLE';
     const details = validation.issues
       .map((item) => `[${item.code}] ${item.message}${item.hint ? `（建议：${item.hint}）` : ''}`)
       .join('\n');
-    throw new Error(`封存前审查原文校验未通过，拒绝生成 ${receiptPath}（可直接修正 ${reportPath} 后重新 seal）：\n${details}`);
+    throw typedError(
+      category,
+      `封存前审查原文校验未通过，拒绝生成 ${receiptPath}（可直接修正 ${reportPath} 后重新 seal）：\n${details}`,
+    );
   }
 
   const receipt = {
@@ -631,9 +758,347 @@ async function collectOutOfScope(root, scope, expectedScopes) {
   return [...outOfScope.values()];
 }
 
-async function collectReviewPackage(repo, argument, scopesInput, roundInput, { skipPreflight = false } = {}) {
+/** 判断文本文件是否包含除注释/import 外的断言或测试谓词 */
+function fileHasPredicate(text) {
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^(?:\/\/|\/\*|\*|\*\/|#)/.test(trimmed)) continue;
+    if (/^import\b/.test(trimmed)) continue;
+    if (PREDICATE_KEYWORDS.test(trimmed)) return true;
+  }
+  return false;
+}
+
+/** 从 Markdown 指定章节抽取表格数据行，排除表头与分隔线 */
+function markdownTableRows(markdown, headingPattern, firstCellExcludes) {
+  const excluded = new Set(Array.isArray(firstCellExcludes) ? firstCellExcludes : [firstCellExcludes]);
+  const lines = String(markdown ?? '').split(/\r?\n/);
+  const start = lines.findIndex((line) => headingPattern.test(line));
+  if (start < 0) return [];
+  const end = lines.findIndex((line, idx) => idx > start && /^##\s/.test(line));
+  const out = [];
+  for (const line of lines.slice(start + 1, end < 0 ? lines.length : end)) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = splitMarkdownRow(line);
+    if (!cells.length || excluded.has(cells[0]) || cells.every((c) => /^:?-{3,}:?$/.test(c))) continue;
+    out.push(cells);
+  }
+  return out;
+}
+
+/** 轻量可封存性预检：2 秒内提前拦下缺失/无谓词候选或关键 QA 产物失鲜的问题，归为 PACKAGE_INVALID */
+async function checkSealability(root, featureDir) {
+  const checklistPath = path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE);
+  if (!await fileExists(checklistPath)) return;
+  let checklist;
+  try {
+    checklist = parseSpecReviewChecklist(await readFile(checklistPath, 'utf8'));
+  } catch (error) {
+    throw typedError('PACKAGE_INVALID', `Spec 审查清单不可用，collect 已阻断：${error.message}`);
+  }
+
+  // 若已生成对账表，预检 qa-plan 执行记录、对账表与审查清单状态是否同步，提前拦下失鲜产物
+  const recPath = path.join(featureDir, QA_DIR, 'reconciliation.md');
+  if (await fileExists(recPath)) {
+    const planText = stripDeliverySection(await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8').catch(() => ''));
+    const recText = await readFile(recPath, 'utf8');
+    const planMap = new Map();
+    for (const cells of markdownTableRows(planText, /^## 执行记录\s*$/, ['用例'])) {
+      if (cells.length >= 3) planMap.set(`${cells[0]}-${cells[1]}`, cells[2]);
+    }
+    const recMap = new Map();
+    for (const cells of markdownTableRows(recText, /^# (?:验收)?对账表/, ['断言', '用例-断言'])) {
+      if (cells.length >= 2) recMap.set(cells[0], cells[1]);
+    }
+    const stale = checklist.rows.length !== planMap.size
+      || checklist.rows.length !== recMap.size
+      || checklist.rows.some((row) => planMap.get(row.id) !== row.status || recMap.get(row.id) !== row.status);
+    if (stale) {
+      throw typedError(
+        'PACKAGE_INVALID',
+        '关键 QA 产物（qa-plan 执行记录 / _qa/reconciliation.md / _qa/spec-review-checklist.json）已失鲜，请先重跑 qa-check acceptance 再 collect',
+      );
+    }
+  }
+
+  const cache = new Map();
+  for (const row of checklist.rows) {
+    if (row.seam === 'static' || row.status !== 'PASS') continue;
+    if (checklist.version === SPEC_REVIEW_CHECKLIST_V2 && !row.required) continue;
+    if (!row.sourceCandidates.length) {
+      throw typedError(
+        'PACKAGE_INVALID',
+        `${row.id}（${row.seam}）缺少 sourceCandidates 候选源码，必然无法通过 seal，请先补齐绑定或过程脚本`,
+      );
+    }
+    const base = row.seam === 'browser' || row.seam === 'api' ? featureDir : root;
+    let hasPredicateCandidate = false;
+    for (const candidate of row.sourceCandidates) {
+      const candidatePath = path.resolve(base, candidate);
+      if (!await fileExists(candidatePath)) continue;
+      if (!cache.has(candidatePath)) {
+        cache.set(candidatePath, await readFile(candidatePath, 'utf8'));
+      }
+      if (fileHasPredicate(cache.get(candidatePath))) {
+        hasPredicateCandidate = true;
+        break;
+      }
+    }
+    if (!hasPredicateCandidate) {
+      throw typedError(
+        'PACKAGE_INVALID',
+        `${row.id}（${row.seam}）的候选源码 ${row.sourceCandidates.join('、')} 不存在或不含有效断言谓词；请先修复脚本/绑定再 collect，否则必然 seal 失败`,
+      );
+    }
+  }
+}
+
+/** 标准化行集用于跨目录重命名配对 */
+function nonEmptyLines(text) {
+  return String(text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+/** 基于行集合计算两份文本的 Jaccard-like 相似度（0~1） */
+function lineSimilarity(textA, textB) {
+  const linesA = nonEmptyLines(textA);
+  const linesB = nonEmptyLines(textB);
+  if (!linesA.length && !linesB.length) return 1;
+  if (!linesA.length || !linesB.length) return 0;
+  const countsB = new Map();
+  for (const line of linesB) countsB.set(line, (countsB.get(line) ?? 0) + 1);
+  let matched = 0;
+  for (const line of linesA) {
+    const remaining = countsB.get(line) ?? 0;
+    if (remaining > 0) {
+      matched += 1;
+      countsB.set(line, remaining - 1);
+    }
+  }
+  return (2 * matched) / (linesA.length + linesB.length);
+}
+
+/** 从 git diff --no-index 输出中剥离路径头只保留 @@ 差异 hunk */
+function formatRenamePatch(fromRel, toRel, similarityPct, rawPatch) {
+  const lines = [
+    `diff --git a/${fromRel} b/${toRel}`,
+    `similarity index ${similarityPct}%`,
+    `rename from ${fromRel}`,
+    `rename to ${toRel}`,
+  ];
+  if (rawPatch) {
+    const rawLines = rawPatch.split(/\r?\n/);
+    const hunkStart = rawLines.findIndex((line) => line.startsWith('@@'));
+    if (hunkStart >= 0) {
+      lines.push(`--- a/${fromRel}`, `+++ b/${toRel}`, ...rawLines.slice(hunkStart));
+    }
+  }
+  return lines.join('\n');
+}
+
+/** 对两组可比文件列表生成 diff 与 rename 折叠结果，避免同内容迁移撑爆 Diff */
+async function buildTreeDiff({ repo, leftDir, leftFiles, rightDir, rightFiles }) {
+  const patches = [];
+  const changedFiles = [];
+  const renames = [];
+  const leftSet = new Set(leftFiles);
+  const rightSet = new Set(rightFiles);
+  const removed = [];
+  const added = [];
+
+  for (const relative of [...new Set([...leftFiles, ...rightFiles])].sort()) {
+    const inLeft = leftSet.has(relative);
+    const inRight = rightSet.has(relative);
+    if (inLeft && !inRight) {
+      removed.push(relative);
+      continue;
+    }
+    if (!inLeft && inRight) {
+      added.push(relative);
+      continue;
+    }
+    const leftAbs = path.join(leftDir, relative);
+    const rightAbs = path.join(rightDir, relative);
+    const leftBuf = await readFile(leftAbs);
+    const rightBuf = await readFile(rightAbs);
+    if (leftBuf.equals(rightBuf)) continue;
+    const patch = diffNoIndex(repo, leftAbs, rightAbs);
+    if (patch) {
+      patches.push(patch);
+      changedFiles.push(relative);
+    }
+  }
+
+  // 先做高频纯重命名 / 高相似迁移配对（同文件名优先，其次高行相似度）
+  const usedAdded = new Set();
+  const unmatchedRemoved = [];
+  const removedTexts = new Map();
+  const addedTexts = new Map();
+  for (const rel of removed) removedTexts.set(rel, await readFile(path.join(leftDir, rel), 'utf8').catch(() => ''));
+  for (const rel of added) addedTexts.set(rel, await readFile(path.join(rightDir, rel), 'utf8').catch(() => ''));
+
+  for (const oldRel of removed) {
+    const oldText = removedTexts.get(oldRel);
+    const oldBase = path.posix.basename(oldRel);
+    let best = null;
+    for (const newRel of added) {
+      if (usedAdded.has(newRel)) continue;
+      const newText = addedTexts.get(newRel);
+      const sim = oldText === newText ? 1 : lineSimilarity(oldText, newText);
+      const bonus = path.posix.basename(newRel) === oldBase ? 0.05 : 0;
+      if (sim >= 0.55 && (!best || sim + bonus > best.score)) {
+        best = { newRel, sim, score: sim + bonus };
+      }
+    }
+    if (best) {
+      usedAdded.add(best.newRel);
+      const rawPatch = best.sim === 1
+        ? ''
+        : diffNoIndex(repo, path.join(leftDir, oldRel), path.join(rightDir, best.newRel));
+      const pct = Math.round(best.sim * 100);
+      patches.push(formatRenamePatch(oldRel, best.newRel, pct, rawPatch));
+      changedFiles.push(best.newRel);
+      renames.push({ from: oldRel, to: best.newRel, similarity: pct, identical: best.sim === 1 });
+    } else {
+      unmatchedRemoved.push(oldRel);
+    }
+  }
+
+  for (const oldRel of unmatchedRemoved) {
+    const patch = diffNoIndex(repo, path.join(leftDir, oldRel), devNull);
+    if (patch) {
+      patches.push(patch);
+      changedFiles.push(oldRel);
+    }
+  }
+  for (const newRel of added) {
+    if (usedAdded.has(newRel)) continue;
+    const patch = diffNoIndex(repo, devNull, path.join(rightDir, newRel));
+    if (patch) {
+      patches.push(patch);
+      changedFiles.push(newRel);
+    }
+  }
+
+  return { patches, changedFiles: [...new Set(changedFiles)].sort(), renames };
+}
+
+/** 为当轮审查生成不可变轻量快照目录 _qa/round-snapshots/r<n>/ */
+async function createRoundSnapshot({ root, feature, round, expectedScopes, treeDigest, qaArtifactsDigest }) {
+  const snapshotDirRel = path.posix.join(QA_DIR, ROUND_SNAPSHOTS_DIR, round);
+  const snapshotAbs = path.join(feature, snapshotDirRel);
+  await rm(snapshotAbs, { recursive: true, force: true });
+  await mkdir(path.join(snapshotAbs, 'repo'), { recursive: true });
+  await mkdir(path.join(snapshotAbs, 'feature'), { recursive: true });
+
+  const files = {};
+  const checklistCandidates = [];
+  const checklistRaw = await readFile(path.join(feature, SPEC_REVIEW_CHECKLIST_FILE), 'utf8').catch(() => null);
+  if (checklistRaw) {
+    try {
+      const parsedChecklist = parseSpecReviewChecklist(checklistRaw);
+      for (const row of parsedChecklist.rows) {
+        if (row.seam === 'browser' || row.seam === 'api') continue;
+        for (const cand of row.sourceCandidates) checklistCandidates.push(cand);
+      }
+    } catch {
+      // 清单解析失败交由后续校验阶段报错，快照仍继续采集范围内文件
+    }
+  }
+  const repoPaths = [...new Set([...listFiles(root, expectedScopes), ...CONTRACT_DOCS, ...checklistCandidates])].sort();
+  for (const relative of repoPaths) {
+    const source = path.join(root, relative);
+    const info = await pathInfo(source);
+    if (!info?.isFile()) continue;
+    const dest = snapshotPath(path.join(snapshotAbs, 'repo'), relative);
+    await mkdir(path.dirname(dest), { recursive: true });
+    await copyFile(source, dest);
+    files[relative] = sha256(await readFile(source));
+  }
+
+  const featureFiles = {};
+  const directFeatureFiles = ['spec.md', 'qa-plan.md', SPEC_REVIEW_CHECKLIST_FILE, SPEC_REVIEW_SKELETON_FILE];
+  for (const relative of directFeatureFiles) {
+    const source = path.join(feature, relative);
+    if (!await fileExists(source)) continue;
+    const dest = snapshotPath(path.join(snapshotAbs, 'feature'), relative);
+    await mkdir(path.dirname(dest), { recursive: true });
+    await copyFile(source, dest);
+    featureFiles[relative] = sha256(await readFile(source));
+  }
+  for (const subDir of ['scripts', 'screenshots']) {
+    const absDir = path.join(feature, subDir);
+    const entries = await readdir(absDir, { recursive: true }).catch(() => []);
+    for (const entry of [...entries].sort()) {
+      const source = path.join(absDir, entry);
+      if (!await fileExists(source)) continue;
+      const rel = path.posix.join(subDir, entry.split(path.sep).join('/'));
+      const dest = snapshotPath(path.join(snapshotAbs, 'feature'), rel);
+      await mkdir(path.dirname(dest), { recursive: true });
+      await copyFile(source, dest);
+      featureFiles[rel] = sha256(await readFile(source));
+    }
+  }
+
+  const manifestData = {
+    schemaVersion: 1,
+    round,
+    createdAt: new Date().toISOString(),
+    treeDigest,
+    qaArtifactsDigest,
+    specSha256: await hashFileOrNull(feature, 'spec.md'),
+    files,
+    featureFiles,
+  };
+  const manifestRel = path.posix.join(snapshotDirRel, 'manifest.json');
+  await writeFile(path.join(feature, manifestRel), `${JSON.stringify(manifestData, null, 2)}\n`);
+  return { snapshotDirRel, manifestRel, manifestData };
+}
+
+/** 构造控制在 3KB 内的结构化审查简报，指向权威产物而非内联冗余正文 */
+function buildReviewBrief({ round, treeDigest, manifest, deltaDiffRel, reservedIds }) {
+  const lines = [
+    '# 本轮审查简报（review-brief）',
+    '',
+    `- 轮次：${round} | tree：${treeDigest.slice(0, 12)} | 快照：\`${manifest.snapshotDir}\``,
+    `- 变更规模：${manifest.changedFiles.length} 个文件（Rename 折叠 ${manifest.renames?.length ?? 0} 个），范围外 ${manifest.outOfScope.length} 个`,
+    deltaDiffRel
+      ? `- Diff 入口：优先看 \`${deltaDiffRel}\`（相邻快照增量）；全量基线见 \`${QA_DIR}/review-package.diff\` 按需查证`
+      : `- Diff 入口：\`${QA_DIR}/review-package.diff\`（首轮基线）`,
+  ];
+  if (manifest.specReviewChecklist) {
+    lines.push(`- Spec 清单：\`${manifest.specReviewChecklist.path}\`${manifest.specReviewChecklist.skeleton ? `（骨架 \`${manifest.specReviewChecklist.skeleton}\`）` : ''}`);
+  }
+  if (reservedIds.length) {
+    const shown = reservedIds.slice(0, 30).join('、');
+    const suffix = reservedIds.length > 30 ? ` 等共 ${reservedIds.length} 条` : '';
+    lines.push(`- 历史已占用编号：${shown}${suffix}`);
+  }
+  lines.push('');
+  let text = lines.join('\n');
+  while (Buffer.byteLength(text, 'utf8') > BRIEF_MAX_BYTES && lines.length > 4) {
+    lines.splice(lines.length - 2, 1);
+    text = lines.join('\n');
+  }
+  return text;
+}
+
+async function collectReviewPackage(
+  repo,
+  argument,
+  scopesInput,
+  roundInput,
+  { skipPreflight = false, allowManualRound = false } = {},
+) {
   const { root, feature } = await resolveFeature(repo, argument);
   const round = roundInput ? normalizeRound(roundInput) : await nextReviewRound(feature);
+  const roundNum = Number(round.slice(1));
+  if (roundNum > MAX_AUTO_REVIEW_ROUND && !allowManualRound) {
+    throw typedError(
+      'WAITING_HUMAN',
+      `当前推导出或请求的轮次为 ${round}，已超过自动复审上限（r1 首审 + r2 增量复审，上限 ${MAX_AUTO_REVIEW_ROUND} 轮）；已停止自动循环，等待人工裁决。若人工明确授权追加轮次，请传 --allow-manual-round。`,
+    );
+  }
   const scope = await readScope(feature);
   if (scope.version !== 2) throw new Error('collect 需要 version 2 基线，请用当前版本 init 重新建立');
   if (skipPreflight) {
@@ -647,6 +1112,9 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
       throw new Error('PREFLIGHT_FAILED：静态预检命中 ERROR，collect 已阻断；请先修复或按需传入 --skip-preflight 应急跳过。');
     }
   }
+  // 可封存性 2 秒预检始终运行，避免打包出必然在 seal 失败的审查包
+  await checkSealability(root, feature);
+
   const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
   const beforeFiles = await snapshotFiles(snapshotRoot);
   const skipped = new Map((scope.skipped ?? []).map((item) => [item.path, item]));
@@ -669,9 +1137,9 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
 
   const currentFiles = listFiles(root, expectedScopes);
   const allFiles = [...new Set([...beforeFiles, ...currentFiles, ...skipped.keys()])].sort();
-  const changedFiles = [];
   const unreviewed = [];
-  const patches = [];
+  const comparableBefore = [];
+  const comparableCurrent = [];
 
   for (const relative of allFiles) {
     const before = snapshotPath(snapshotRoot, relative);
@@ -693,17 +1161,20 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
       continue;
     }
 
-    const beforeExists = await fileExists(before);
-    const currentExists = currentInfo?.isFile() ?? false;
-    if (beforeExists && currentExists && (await readFile(before)).equals(await readFile(path.join(root, relative)))) {
-      continue;
-    }
-    const patch = diffNoIndex(root, beforeExists ? before : devNull, currentExists ? path.join(root, relative) : devNull);
-    if (patch) {
-      patches.push(patch);
-      changedFiles.push(relative);
-    }
+    if (await fileExists(before)) comparableBefore.push(relative);
+    if (currentInfo?.isFile()) comparableCurrent.push(relative);
   }
+
+  const diffResult = await buildTreeDiff({
+    repo: root,
+    leftDir: snapshotRoot,
+    leftFiles: comparableBefore,
+    rightDir: root,
+    rightFiles: comparableCurrent,
+  });
+  const changedFiles = diffResult.changedFiles;
+  const patches = diffResult.patches;
+  const renames = diffResult.renames;
 
   const outOfScope = await collectOutOfScope(root, scope, expectedScopes);
   const fromBase = scope.fromBase ?? [];
@@ -727,12 +1198,48 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
     : '';
   await mkdir(path.join(feature, QA_DIR), { recursive: true });
   await writeFile(path.join(feature, QA_DIR, 'review-package.diff'), header + patches.join('\n'));
+
+  // 生成当轮不可变快照；若存在上一轮快照且轮次 >= 2，则再计算相邻快照 delta.diff
+  const snapshot = await createRoundSnapshot({
+    root,
+    feature,
+    round,
+    expectedScopes,
+    treeDigest,
+    qaArtifactsDigest,
+  });
+  let deltaDiffRel = null;
+  if (roundNum > 1) {
+    let prevRepoDir = null;
+    for (let prevRound = roundNum - 1; prevRound >= 1; prevRound -= 1) {
+      const candidate = path.join(feature, QA_DIR, ROUND_SNAPSHOTS_DIR, `r${prevRound}`, 'repo');
+      if ((await pathInfo(candidate))?.isDirectory()) {
+        prevRepoDir = candidate;
+        break;
+      }
+    }
+    if (prevRepoDir) {
+      const prevSnapFiles = (await snapshotFiles(prevRepoDir)).filter((rel) => inScope(rel, expectedScopes));
+      const deltaResult = await buildTreeDiff({
+        repo: root,
+        leftDir: prevRepoDir,
+        leftFiles: prevSnapFiles,
+        rightDir: root,
+        rightFiles: comparableCurrent,
+      });
+      deltaDiffRel = `${QA_DIR}/review-package-delta.diff`;
+      await writeFile(path.join(feature, deltaDiffRel), deltaResult.patches.join('\n'));
+    }
+  }
+
+  const historical = await scanHistoricalFindingIds(feature, { upToRound: roundNum });
   const manifest = {
     version: 2,
     base: scope.base,
     scope: expectedScopes,
     fromBase,
     changedFiles,
+    renames,
     unreviewed,
     outOfScope,
     preexisting,
@@ -740,6 +1247,9 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
     qaArtifactsDigest,
     packagedAt,
     package: `${QA_DIR}/review-package.diff`,
+    ...(deltaDiffRel ? { deltaPackage: deltaDiffRel } : {}),
+    snapshotDir: snapshot.snapshotDirRel,
+    snapshotManifest: snapshot.manifestRel,
   };
   const planText = await readFile(path.join(feature, 'qa-plan.md'), 'utf8').catch(() => '');
   const coverageMatch = planText.match(/^QA Review Coverage:\s*(1|2)\s*$/m);
@@ -755,6 +1265,10 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
     };
   }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(
+    path.join(feature, QA_DIR, 'review-brief.md'),
+    buildReviewBrief({ round, treeDigest, manifest, deltaDiffRel, reservedIds: historical.allIds }),
+  );
   // 每轮审查发放一次性 challenge；再次 collect 会换 nonce，旧凭据不能用于新轮次
   const challenge = {
     schemaVersion: 1,
@@ -762,12 +1276,16 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
     round,
     nonce: randomUUID(),
     treeDigest,
+    qaArtifactsDigest,
     packagedAt,
+    snapshotDir: snapshot.snapshotDirRel,
+    reservedIds: historical.allIds,
+    nextIds: historical.nextIds,
   };
   await writeFile(path.join(feature, QA_DIR, CHALLENGE_FILE), `${JSON.stringify(challenge, null, 2)}\n`);
 
-  console.log(`审查包已生成：${changedFiles.length} 个变更文件，${unreviewed.length} 个未审查文件，${outOfScope.length} 个范围外改动，${preexisting.length} 个开工前已有改动；tree ${treeDigest.slice(0, 12)}。`);
-  console.log(`审查 challenge 已生成：${round}，nonce ${challenge.nonce}；子代理写原文后用 review-package seal 封存。`);
+  console.log(`审查包已生成：${changedFiles.length} 个变更文件（Rename 折叠 ${renames.length} 个），${unreviewed.length} 个未审查文件，${outOfScope.length} 个范围外改动，${preexisting.length} 个开工前已有改动；tree ${treeDigest.slice(0, 12)}。`);
+  console.log(`审查 challenge 已生成：${round}，nonce ${challenge.nonce}；快照 ${snapshot.snapshotDirRel}；子代理写原文后用 review-package seal 封存。`);
   for (const item of outOfScope) console.log(`范围外改动：${item.path}（${item.reason}）`);
   if (outOfScope.length) {
     console.log(`属于本任务 → add 后重新 collect；不属于本任务（用户或其他进程的改动）→ 在 review-report 的 ## 范围说明 逐个写明来源；不要修改 ${QA_DIR}/scope.json`);
@@ -776,17 +1294,80 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput, { s
   for (const relative of preexisting) console.log(`开工时范围内已有改动且未 add：${relative}`);
 }
 
+/** 根据 review/ 下全部原文自动生成无漏项三档分流表与默认驳回骨架 */
+async function scaffoldReport(repo, argument, args) {
+  const { feature } = await resolveFeature(repo, argument);
+  let host = 'Claude Code';
+  let overwrite = false;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--overwrite') {
+      overwrite = true;
+    } else if (arg === '--host') {
+      const val = args[i + 1];
+      if (!val || val.startsWith('--')) throw new Error('scaffold-report 的 --host 缺少值');
+      host = val.trim();
+      i += 1;
+    } else {
+      throw new Error(`scaffold-report 不支持的参数：${arg}`);
+    }
+  }
+  const reportPath = path.join(feature, 'review-report.md');
+  if (!overwrite && await fileExists(reportPath)) {
+    throw new Error('review-report.md 已存在；如需覆盖请传 --overwrite');
+  }
+  const historical = await scanHistoricalFindingIds(feature);
+  const triageRows = [];
+  const defaultRejects = [];
+  for (const record of historical.records.values()) {
+    const trajectory = record.occurrences.map((occ) => `r${occ.round}`).join(' → ');
+    const lastOcc = record.occurrences.at(-1);
+    const statusMatch = lastOcc.round > record.firstRound
+      ? lastOcc.line.match(/(已修|未修|修错|改档成立|改档不成立|维持)/)
+      : null;
+    const finalStatus = statusMatch ? statusMatch[1] : '未修';
+    if (record.id.startsWith('S-J')) {
+      defaultRejects.push(`- [${record.id}]（${lastOcc.location}）${lastOcc.line.replace(/^\s*\[[^\]]+\]\s*/, '')}：默认驳回（微调建议，待复核写「改档成立」或「改档不成立」）`);
+    } else {
+      triageRows.push(`| ${record.id} | 本次修 | ${finalStatus} | ${trajectory} | | |`);
+    }
+  }
+  const lines = [
+    `审查方式：宿主=${host}；双轴外部独立会话 / 子代理`,
+    '',
+    '## 三档分流',
+    '> 档位合法值：本次修、转专项、驳回',
+    '> 处置状态合法值：已修、未修、修错、改档成立、改档不成立、驳回、转专项（未完成可留空）',
+  ];
+  if (triageRows.length) {
+    lines.push(
+      '| 编号 | 档位 | 处置状态 | 轮次轨迹 | 验证证据 | 理由 |',
+      '| --- | --- | --- | --- | --- | --- |',
+      ...triageRows,
+    );
+  } else {
+    lines.push('无发现');
+  }
+  if (defaultRejects.length) {
+    lines.push('', '## 默认驳回', ...defaultRejects);
+  }
+  lines.push('');
+  await writeFile(reportPath, lines.join('\n'));
+  console.log(`已生成分流骨架：review-report.md（本次/需跟踪 ${triageRows.length} 条，默认驳回 ${defaultRejects.length} 条）`);
+}
+
 async function printDigest(repo, argument) {
   const { root, feature } = await resolveFeature(repo, argument);
   const scope = await readScope(feature);
   console.log(`tree: ${await computeTreeDigest(root, scope.scopes)}`);
 }
 
-/** collect 从参数中取出可选的 --round 与 --skip-preflight；其余参数仍交给范围解析 */
+/** collect 从参数中取出可选的 --round、--skip-preflight 与 --allow-manual-round；其余参数仍交给范围解析 */
 function splitCollectFlags(args) {
   const paths = [];
   let round;
   let skipPreflight = false;
+  let allowManualRound = false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--round') {
       const value = args[index + 1];
@@ -795,23 +1376,25 @@ function splitCollectFlags(args) {
       index += 1;
     } else if (args[index] === '--skip-preflight') {
       skipPreflight = true;
+    } else if (args[index] === '--allow-manual-round') {
+      allowManualRound = true;
     } else {
       paths.push(args[index]);
     }
   }
-  return { round, skipPreflight, paths };
+  return { round, skipPreflight, allowManualRound, paths };
 }
 
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--') args.shift();
   const [command, feature, ...rest] = args;
-  const usage = '用法: review-package <init|add|collect|digest|seal> <feature-dir> [--round r<n>] [--skip-preflight] [-- <path...>]';
+  const usage = '用法: review-package <init|add|collect|digest|seal|scaffold-report> <feature-dir> [--round r<n>] [--skip-preflight] [--allow-manual-round] [-- <path...>]';
   if (command === '--help' || command === 'help' || !command) {
     console.log(usage);
     return;
   }
-  if (!feature || !['init', 'add', 'collect', 'digest', 'seal'].includes(command)) {
+  if (!feature || !['init', 'add', 'collect', 'digest', 'seal', 'scaffold-report'].includes(command)) {
     console.error(usage);
     process.exitCode = 1;
     return;
@@ -822,9 +1405,10 @@ async function main() {
     if (command === 'init') await initReviewBase(repo, feature, rest);
     else if (command === 'add') await addReviewScopes(repo, feature, rest);
     else if (command === 'collect') {
-      const { round, skipPreflight, paths } = splitCollectFlags(rest);
-      await collectReviewPackage(repo, feature, paths, round, { skipPreflight });
+      const { round, skipPreflight, allowManualRound, paths } = splitCollectFlags(rest);
+      await collectReviewPackage(repo, feature, paths, round, { skipPreflight, allowManualRound });
     } else if (command === 'seal') await sealReview(repo, feature, rest);
+    else if (command === 'scaffold-report') await scaffoldReport(repo, feature, rest);
     else await printDigest(repo, feature);
   } catch (error) {
     console.error(error.message);

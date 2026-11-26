@@ -20,7 +20,7 @@ disable-model-invocation: true
 - 单文件测试使用 `pnpm --filter @repo/web test "<相对 apps/web 的路径>"`；含 `[id]` 的路径必须加引号，避免 shell 通配。
 - 显式指定单张工单时，完成该工单及其测试后停下汇报；无工单参数或用户要求连续冲刺时，按依赖顺序承接全部就绪工单，不逐票询问。
 - 修复已交付特性时使用独立修复目录和 `QA Kind: fix`；先用同一命令保存修复前红日志，再实现并保存绿日志，确保红日志更早且 tree 不同。
-- 命令证据统一经 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成（过程脚本支持 `--script <path> [-- <args...>]`），同名日志不得覆盖，失败或旧证据换新标签。阶段 4 收尾可用 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 1 秒清除静态违规。
+- 命令证据统一经 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成（过程脚本支持 `--script <path> [-- <args...>]`，`ego-browser` 过程脚本优先使用 `--executor ego-browser --script <path>` 淘汰双包装），同名日志不得覆盖，失败或旧证据换新标签。阶段 4 收尾可用 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 1 秒清除静态违规。
 - unit/integration 的 PASS 行在执行记录「绑定」列写 `` `<测试文件>` › <用例标题> ``；绑定写错只改执行记录，不重跑证据。
 
 ## 3. 验收
@@ -35,9 +35,9 @@ disable-model-invocation: true
 ## 4. 审查与交付
 
 - 阶段 5 验收后按 `docs/agents/qa-workflow.md` 阶段 6 串联：先运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`（默认挂载 `qa-preflight` 拦下静态伪断言与交付命令不一致），再用 Skill 工具调用 `code-review`（参数写明特性目录与轮次）；审查子代理的派发、编号与落盘规则只在该技能内，不要用 Agent 工具自行派审查子代理。
-- 两份原文落盘后，主 Agent 在 `review-report.md` 写审查方式行（以 `宿主=<宿主名>；` 开头声明审查所在宿主）、按编号逐条核对的 `## 三档分流` 表与范围说明，不改写 `review/` 原文；实现串行不排斥这项必要审查。
-- 未实际调用 `code-review` 或拿不到两份真实独立返回时，状态为“待独立审查”。实现者不得凭空生成 `review/` 原文、`review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付审查包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
-- 本次修由实现者明确修复（先读 `## 修复尝试记录`，不重复已判失败的改法），重跑受影响验证后重新 collect 并按正本做增量复审，自动上限 2 轮（r2、r3）；S-H、P-M、P-W 被驳回或转专项时同样进入复审，由审查者复核，判改档不成立的改为本次修、不得再次改档；用尽后仍有未修、修错或改档不成立时停止自动修复，照常完成交付验证，由 `qa-check review` 输出 BLOCKED 交人工裁决。测试结论必须与最后一次实际运行一致。
+- 两份原文落盘后，先用 `review-package.mjs scaffold-report` 预生成无漏项 `review-report.md` 骨架，再写审查方式行（以 `宿主=<宿主名>；` 开头声明审查所在宿主）、按编号逐条核对的 `## 三档分流` 表与范围说明，不改写 `review/` 原文；双轴均达终态前冻结全部代码与文档/QA 输入，禁止一方先回即抢跑动码。
+- 未实际调用 `code-review` 或拿不到两份真实独立返回时，状态为“待独立审查”。实现者不得凭空生成 `review/` 原文、`review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付审查包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。遇三类错误按契约路由：`REVIEWER_EDITABLE`（格式或行号错，同轮最多修正重试 `seal` 1 次）、`PACKAGE_INVALID`（候选/快照/失鲜包错，立即停止先重建审查包）、`INFRA_UNAVAILABLE`（配额/模型/服务不可用，立即停在 `WAITING_INFRA` 保持待独立审查，不自动换模型或重派）。
+- 先分流再动码（可维护性 `S-J` 不与核心阻断修复混批）。本次修由实现者明确修复（先读 `## 修复尝试记录`，不重复已判失败的改法），重跑受影响验证后重新 collect 并按正本做增量复审，**自动上限 1 轮（`r2`，超限需人工 `--allow-manual-round` 授权）**；`S-H`、`P-M`、`P-W` 被驳回或转专项时同样进入复审，由审查者复核，判改档不成立的改为本次修、不得再次改档；用尽后仍有未修、修错或改档不成立时停止自动修复，照常完成交付验证，进入正式暂停终态 **`WAITING_HUMAN`** 由 `qa-check review` 输出 BLOCKED 交人工裁决。测试结论必须与最后一次实际运行一致。
 - 独立审查完成前不得把 backlog、计划等文档写成完成态，状态回填放在人工终审之后。
 - QA 工作流负责最终交付：全部浏览器验收、当前独立审查与必要复审完成后，才在最终代码上执行全部交付命令；新版双指纹（`evidenceTree` 与 `qaArtifactsDigest`）均未变时既有同 tree 绿日志免除 `VERIFICATION_BEFORE_REVIEW` 重跑，仅 QA 产物变化报 `STALE_QA_ARTIFACTS`（旧包早于双轴最晚 completedAt 仍报 `VERIFICATION_BEFORE_REVIEW`）。随后经 qa-run 以 `gate-review-*` 运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，保存真实输出；`结果: PASS` 只称机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代人工终审。
 - 报告实际修改、测试输出、未验证项和新增 Agent 次数，如实区分独立审查完成与待人工终审，并附人工终审入口路径（`_qa/reconciliation.md` 对账表与 `review-report.md` 分流表），清单按正本阶段 7 执行，不重贴。不要自动 commit、push 或合并；是否提交由用户按 `.claude/rules/git-workflow.md` 决定。

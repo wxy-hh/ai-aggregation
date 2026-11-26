@@ -2,13 +2,14 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { computeEvidenceTreeDigest, readScope, resolveFeature } from './review-package.mjs';
 
 const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SAFE_ARGUMENT = /^[A-Za-z0-9_./:@%+=,-]+$/;
+const SUPPORTED_EXECUTORS = new Set(['ego-browser', 'node', 'sh']);
 
 /** exit 0 不代表命令实际执行了项目或测试；只识别明确空运行摘要 */
 export function emptyEvidenceReason(output) {
@@ -112,6 +113,8 @@ export function parseRunLog(text) {
     label: fields.label ?? null,
     command: fields.command ?? null,
     argv,
+    executor: fields.executor ?? null,
+    script: fields.script ?? null,
     cwd: fields.cwd ?? null,
     head: fields.head ?? null,
     tree: fields.tree ?? null,
@@ -141,7 +144,7 @@ async function treeAt(root, feature) {
   }
 }
 
-async function runEvidence(repo, featureArgument, label, argv) {
+async function runEvidence(repo, featureArgument, label, argv, { executor = null, script = null, stdinContent = null } = {}) {
   const { root, feature } = await resolveFeature(repo, featureArgument);
   if (!LABEL_PATTERN.test(label)) throw new Error('标签须以字母或数字开头，且只能包含字母、数字、点、下划线与连字符');
   const evidenceRoot = path.join(feature, 'evidence');
@@ -152,6 +155,12 @@ async function runEvidence(repo, featureArgument, label, argv) {
   const tree = await treeAt(root, feature);
   const started = new Date().toISOString();
   const cwd = path.relative(root, repo).split(path.sep).join('/') || '.';
+  const resolvedScript = script
+    ? await realpath(path.resolve(repo, script)).catch(() => path.resolve(repo, script))
+    : null;
+  const relativeScript = resolvedScript
+    ? path.relative(root, resolvedScript).split(path.sep).join('/')
+    : null;
 
   let handle;
   try {
@@ -164,26 +173,33 @@ async function runEvidence(repo, featureArgument, label, argv) {
   }
 
   try {
-    const header = [
+    const headerLines = [
       '# qa-run v1',
       `# label: ${label}`,
       `# command: ${formatCommand(argv)}`,
       `# argv: ${JSON.stringify(argv)}`,
+    ];
+    if (executor) headerLines.push(`# executor: ${executor}`);
+    if (relativeScript) headerLines.push(`# script: ${relativeScript}`);
+    headerLines.push(
       `# cwd: ${cwd}`,
       `# head: ${head}`,
       `# tree: ${tree}`,
       `# started: ${started}`,
       '# ---',
       '',
-    ].join('\n');
-    await handle.writeFile(header, 'utf8');
+    );
+    await handle.writeFile(headerLines.join('\n'), 'utf8');
 
     const child = spawn(argv[0], argv.slice(1), {
       cwd: repo,
       env: process.env,
       shell: false,
-      stdio: ['inherit', 'pipe', 'pipe'],
+      stdio: [stdinContent !== null ? 'pipe' : 'inherit', 'pipe', 'pipe'],
     });
+    if (stdinContent !== null) {
+      child.stdin.end(stdinContent, 'utf8');
+    }
     let queue = Promise.resolve();
     let hasBody = false;
     let outputTail = '';
@@ -235,21 +251,69 @@ function resolveScriptArgv(scriptPath, extraArgs) {
   return [scriptPath, ...extraArgs];
 }
 
+/** 解析 --executor 与 --script 组合，生成执行参数、记录元数据与可选 stdin 内容 */
+async function resolveExecutionSpec({ repo, scriptPath, executor, extraArgs }) {
+  if (executor) {
+    if (!SUPPORTED_EXECUTORS.has(executor)) {
+      throw new Error(`用法错误：--executor 仅支持 ${[...SUPPORTED_EXECUTORS].join(' | ')}，当前为 ${executor}`);
+    }
+    if (!scriptPath) {
+      throw new Error(`用法错误：--executor ${executor} 需要配合 --script <path> 使用`);
+    }
+    const scriptAbs = path.resolve(repo, scriptPath);
+    if (executor === 'ego-browser') {
+      const bin = process.env.QA_EGO_BROWSER_BIN || 'ego-browser';
+      const stdinContent = await readFile(scriptAbs, 'utf8');
+      return {
+        argv: [bin, 'nodejs', ...extraArgs],
+        executor,
+        script: scriptAbs,
+        stdinContent,
+      };
+    }
+    if (executor === 'node') {
+      return { argv: [process.execPath, scriptAbs, ...extraArgs], executor, script: scriptAbs, stdinContent: null };
+    }
+    return { argv: ['sh', scriptAbs, ...extraArgs], executor, script: scriptAbs, stdinContent: null };
+  }
+  if (scriptPath) {
+    return {
+      argv: resolveScriptArgv(scriptPath, extraArgs),
+      executor: null,
+      script: path.resolve(repo, scriptPath),
+      stdinContent: null,
+    };
+  }
+  return { argv: extraArgs, executor: null, script: null, stdinContent: null };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--') args.shift();
   const [feature, label, ...rest] = args;
   let scriptPath = null;
+  let executor = null;
   let seenDashDash = false;
   const cmdArgs = [];
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
-    if (!seenDashDash && !scriptPath && !cmdArgs.length) {
+    if (!seenDashDash && !cmdArgs.length) {
       if (arg === '--') {
         seenDashDash = true;
         continue;
       }
-      if (arg === '--script') {
+      if (arg === '--executor') {
+        const next = rest[i + 1];
+        if (!next || next === '--') {
+          console.error('用法错误：--executor 缺少执行器名称（ego-browser | node | sh）');
+          process.exitCode = 1;
+          return;
+        }
+        executor = next;
+        i += 1;
+        continue;
+      }
+      if (arg === '--script' && !scriptPath) {
         const next = rest[i + 1];
         if (!next || next === '--') {
           console.error('用法错误：--script 缺少脚本路径');
@@ -267,9 +331,22 @@ async function main() {
     }
     cmdArgs.push(arg);
   }
-  const finalArgv = scriptPath ? resolveScriptArgv(scriptPath, cmdArgs) : cmdArgs;
-  if (!feature || !label || !finalArgv.length) {
-    console.error('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...> 或 --script <path> [-- <args...>]');
+  if (!feature || !label || (!scriptPath && !cmdArgs.length)) {
+    console.error('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...> 或 [--executor ego-browser|node|sh] --script <path> [-- <args...>]');
+    process.exitCode = 1;
+    return;
+  }
+  let spec;
+  try {
+    spec = await resolveExecutionSpec({ repo: process.cwd(), scriptPath, executor, extraArgs: cmdArgs });
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
+  const finalArgv = spec.argv;
+  if (!finalArgv.length) {
+    console.error('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...> 或 [--executor ego-browser|node|sh] --script <path> [-- <args...>]');
     process.exitCode = 1;
     return;
   }
@@ -280,7 +357,11 @@ async function main() {
     return;
   }
   try {
-    process.exitCode = await runEvidence(process.cwd(), feature, label, finalArgv);
+    process.exitCode = await runEvidence(process.cwd(), feature, label, finalArgv, {
+      executor: spec.executor,
+      script: spec.script,
+      stdinContent: spec.stdinContent,
+    });
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

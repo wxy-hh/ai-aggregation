@@ -24,7 +24,7 @@ description: "沿两个轴审查自固定点（commit、branch、tag 或 merge-b
 
 Standards 子代理的规范来源必须包含：根及改动所在子目录的 `CLAUDE.md`、`.claude/rules/` 下与改动相关的规则文件；改动 UI 时加 `DESIGN.md`，改动 QA 工作流自身时加 `docs/agents/qa-workflow.md`。`AGENTS.md` 是符号链接，不重复提供。
 
-规范来源之外，Standards 轴始终携带以下 **Fowler 坏味道基线**（`Refactoring` ch.3）。两条约束：**仓库成文规范优先**，文档认可的做法不报；**每条都只是判断建议**（`S-J`），不是硬违规。工具已强制的项跳过：
+规范来源之外，Standards 轴始终携带以下 **Fowler 坏味道基线**（`Refactoring` ch.3）。两条约束：**仓库成文规范优先**，文档认可的做法不报；**不做 `S-J` 前缀机器硬锁，每条可维护性坏味道均归判断建议（`S-J`）且默认驳回不与核心修复捆绑**。按 6 类语义清晰定级：真实产品行为/生命周期/竞态缺陷及 `DESIGN.md` 可用性/无障碍/明文禁令直归 `[S-H<n>]` 或 `[P-W<n>]` 阻断；背景光斑、透明度档位微调、字体别名偏好与下方坏味道仅作 `[S-J<n>]`。工具已强制的项跳过：
 
 - **Mysterious Name**：函数、变量或类型的名字没有揭示它做什么或持有何物。→ 改名；改不出诚实的名字说明设计本身含混。
 - **Duplicated Code**：同一逻辑形状出现在多个 hunk 或文件。→ 抽取共享形状，两处调用。
@@ -49,18 +49,18 @@ Standards 子代理的规范来源必须包含：根及改动所在子目录的 
 
 **Spec 子代理 prompt 必须包含**：diff 来源与提交列表、spec 路径或内容，以及下方 brief；仅 QA 工作流调用时另给 `_qa/reconciliation.md`、`_qa/spec-review-checklist.json`（及 v2 预填骨架 `_qa/spec-review-skeleton.md`，manifest 声明时）与 `qa-plan.md` 执行记录证据列引用的 `screenshots/`。
 
-> 报告 spec 缺失/部分实现、范围蔓延与错误实现，每条引用 spec 原文。逐行核对实测值或绑定是否证明冻结断言：unit/integration 沿绑定查看叶子测试的实际断言，browser/api 查看过程脚本的硬断言，不能只看标题或 PASS。若实现错误而谓词仍会通过，以 `[P-W<n>]` 报告并引用该行。只按冻结断言原文核对截图；截图必须支撑其 **VisualTarget**（语义区域 + 稳定定位器）。单纯取景不全但硬断言与截图仍是同一目标时，沿用「脚本已硬断言、截图只是取景不全时不编号」，只写正文；目标被替换成标题、状态卡或整页时按 `[P-W<n>]` 报告。未核实项对应 spec 的 US 或冻结断言时，必须核实或以 `[P-M<n>]` 编号并写明未核实。manifest 声明 `specReviewChecklist` 时：v1 原文含 `## 对账覆盖` 五列表并逐字复制实测/绑定；v2 原文直接使用四列表 `| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |` 仅响应 `required: true` 项（若存在非必审常规项则补充 `## 抽检范围` 说明实际抽检文件范围）。源码引用 `path:line` 必须命中目标行前后 ±5 行窗口内的真实测试或断言谓词（禁止 `:1` 敷衍）。冻结与当前断言不同写 `变更成立` 或 `变更不成立`，未变化写不适用。响应注入与核心链路真实冒烟沿用正本规则；acceptance 有 BLOCKED 时只能写“无新增审查发现”，不得宣称整体通过。
+> 报告 spec 缺失/部分实现、范围蔓延与错误实现，每条引用 spec 原文。逐行核对实测值或绑定是否证明冻结断言：unit/integration 沿绑定查看叶子测试的实际断言，browser/api 查看过程脚本的硬断言，不能只看标题或 PASS。若实现错误而谓词仍会通过，以 `[P-W<n>]` 报告并引用该行。只按冻结断言原文核对截图；截图必须支撑其 **VisualTarget**（语义区域 + 稳定定位器）。单纯取景不全但硬断言与截图仍是同一目标时，沿用「脚本已硬断言、截图只是取景不全时不编号」，只写正文；目标被替换成标题、状态卡或整页时按 `[P-W<n>]` 报告。未核实项对应 spec 的 US 或冻结断言时，必须核实或以 `[P-M<n>]` 编号并写明未核实。manifest 声明 `specReviewChecklist` 时：v1 原文含 `## 对账覆盖` 五列表并逐字复制实测/绑定；v2 原文直接使用四列表 `| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |` 按分组 `reviewUnits` 仅响应 `required` / 失效项，同哈希 `inherited` 与机检存量回归 `sampled` 不必逐行重写（若存在非必审常规项则补充 `## 抽检范围` 说明实际抽检文件范围）。源码引用 `path:line` 必须命中目标行前后 ±5 行窗口内的真实测试或断言谓词（禁止 `:1` 敷衍，有快照时在 `_qa/round-snapshots/r<n>/` 上核验）。冻结与当前断言不同写 `变更成立` 或 `变更不成立`，未变化写不适用。响应注入与核心链路真实冒烟沿用正本规则；acceptance 有 BLOCKED 时只能写“无新增审查发现”，不得宣称整体通过。
 
 **审查执行边界（必须写入两个 prompt）**：
 
 - **只读静态核对**：不得重跑测试套件、`typecheck`、`lint` 或启动服务；测试是否通过以 `qa-run` 日志与阶段 7 `qa-check` 为准。仅当怀疑某条叶子测试虚假通过时，打开该测试源码核对谓词。
 - **严禁读取同轮另一轴的 `review/` 原文**，保持双轴独立。
-- **严禁跨特性读取其他 `.scratch/` 目录**；编号与格式以本技能为准。
-- 派发审查子代理前先选定具备写文件与执行命令权限的 profile；审查子代理必须具备写文件与执行命令权限，只读探索型代理不得担任审查者（如 Kimi Code 的 `explore` profile 不能担任，需选可写的 `coder` 等 profile）。quota/配额耗尽、无效模型别名、语言服务不可用、用户取消或无返回时，不自动换模型、不重派同轴同轮代理；保留已落盘内容并保持待独立审查，由用户决定后续会话。
+- **严禁跨特性读取其他 `.scratch/` 目录**；编号由 `challenge.reservedIds`/`nextIds` 计算并按登记器递增，严禁手写起始号，跨轮复用不同语义报 `FINDING_ID_COLLISION`。
+- 派发审查子代理前先选定具备写文件与执行命令权限的 profile；审查子代理必须具备写文件与执行命令权限，只读探索型代理不得担任审查者（如 Kimi Code 的 `explore` profile 不能担任，需选可写的 `coder` 等 profile）。quota/配额耗尽、无效模型别名、语言服务不可用、用户取消或无返回时按 **`INFRA_UNAVAILABLE`** 立即暂停，不自动换模型、不重派同轴同轮代理；保留已落盘内容并保持待独立审查，由用户决定后续会话。
 
-**QA 绑定与封存（仅 QA 工作流调用时）**：每个子代理 prompt 写入两行 `QA_REVIEW_BINDING: .scratch/<feature>|r<n>|standards`（Spec 轴用 `spec`）与 `QA_REVIEW_NONCE: <nonce>`；nonce 从 `_qa/review-challenge.json` 读取，使用仓库相对特性目录与实际轮次，不得省略或复用其他轮次。prompt 同时给出可复制执行的 seal 命令与宿主名。子代理把最终审查内容直接写入 `.scratch/<feature>/review/r<n>-standards.md` 或 `review/r<n>-spec-axis.md`（首轮 n 为 1），再运行 `node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r<n> --axis standards|spec --file review/r<n>-standards.md|review/r<n>-spec-axis.md --reviewer-kind subagent --host "<宿主名>"`（r2 起加 `--pending-ids "<编号,...>"`）。`seal` 会在写凭据前同步校验编号/无发现、`--pending-ids` 与 Spec 对账覆盖及 `±5` 行谓词引用，不通过会拒绝生成 `.source.json` 并提示错因，子代理可在同上下文当场修好原文后重试 `seal`，直至打印 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`。
+**QA 绑定、不可变快照与错误路由（仅 QA 工作流调用时）**：每个子代理 prompt 写入两行 `QA_REVIEW_BINDING: .scratch/<feature>|r<n>|standards`（Spec 轴用 `spec`）与 `QA_REVIEW_NONCE: <nonce>`；nonce 从 `_qa/review-challenge.json` 读取，使用仓库相对特性目录与实际轮次，不得省略或复用其他轮次。prompt 同时给出 `_qa/review-brief.md`、可用快照路径 `_qa/round-snapshots/r<n>/`（核对 `--executor` 驱动脚本）、登记器给出的 `nextIds`、可复制执行的 seal 命令与宿主名。子代理把最终审查内容直接写入 `.scratch/<feature>/review/r<n>-standards.md` 或 `review/r<n>-spec-axis.md`（首轮 n 为 1），再运行 `node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r<n> --axis standards|spec --file review/r<n>-standards.md|review/r<n>-spec-axis.md --reviewer-kind subagent --host "<宿主名>"`（r2 起加 `--pending-ids "<编号,...>"`），封存成功在最终返回附上 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`。`seal` 基于当轮不可变快照同步校验编号、撞号 `FINDING_ID_COLLISION`、`--pending-ids` 与 Spec 对账覆盖及 `±5` 行谓词引用，不通过会拒绝生成 `.source.json` 并提示明确错误类别：**`REVIEWER_EDITABLE`**（行号或表格格式问题，同轮最多可修正后重试 `seal` **1 次**）、**`PACKAGE_INVALID`**（`sourceCandidates`、快照缺件或包失鲜，子代理立即停止交主代理重建包）。若审查中 live 工作区被踩脏，子代理仍可针对快照完成 `seal` 留证，由 `qa-check` 判定为 **`SUPERSEDED`**。
 
-**QA 主代理职责（仅 QA 工作流调用时）**：主代理不转抄、不改写、不重算审查原文；只检查原文与 `.source.json` 是否存在，然后进入三档分流；未进分流表的默认驳回 S-J 在 `## 默认驳回` 中列出编号与原文位置。封存前必须定稿，**禁止封存后删除 `.source.json` 重封**；`collect` 前由执行方或默认挂载的 `qa-preflight` 清理字面静态问题。
+**QA 主代理职责与冻结屏障（仅 QA 工作流调用时）**：双轴派发后至双轴均到达明确终态（`returned/failed/cancelled`）前，**冻结全部代码、测试、`spec.md`、`scope.json`、`qa-plan.md`、术语及脚本/截图**，一方先回严禁抢跑动码。两轴落盘后可用 `node tooling/scripts/review-package.mjs scaffold-report .scratch/<feature>` 预生成无漏项 `review-report.md` 分流骨架，主代理不转抄、不改写、不重算审查原文，先分流再修、核心阻断与可维护性 `S-J` 分批不捆绑；未进分流表的默认驳回 S-J 在 `## 默认驳回` 中列出编号与原文位置。封存前必须定稿，**禁止封存后删除 `.source.json` 重封**；`collect` 前执行 `qa-preflight` 与 2 秒可封存性预检。
 
 **QA 宿主差异（仅 QA 工作流调用时）**：
 
@@ -82,6 +82,6 @@ Standards 子代理的规范来源必须包含：根及改动所在子目录的 
 
 ## QA 复审（r2 起，仅 QA 工作流调用时）
 
-给子代理完整审查包、它自己的历次原文、spec、主代理列出的**本轮修复改过的文件**与 QA 产物变化，以及全部待复核编号与理由：上轮本次修编号，以及上一轮分流表中 S-H、P-M、P-W 类被驳回或转专项的编号与理由；Spec 子代理另给当前的 `screenshots/`；不给实现者的修复尝试记录。
+默认自动增量复审上限为 **1 轮（`r2`）**，超出需人工显式授权 `--allow-manual-round`，否则进入 **`WAITING_HUMAN`**。复审默认给子代理 `_qa/review-brief.md`、相邻快照间机器生成的 `_qa/review-package-delta.diff`、不可变全量快照基线（按需回查跨文件交互）、它自己的历次原文、spec、主代理列出的**本轮修复改过的文件**与 QA 产物变化，以及全部待复核编号与理由：上轮本次修编号，以及上一轮分流表中 S-H、P-M、P-W 类被驳回或转专项的编号与理由；Spec 子代理另给当前的 `screenshots/`；不给实现者的修复尝试记录。
 
-子代理对上轮每个本次修编号写 `[编号] 已修`、`[编号] 未修` 或 `[编号] 修错`；对每个给出的驳回或转专项编号核对理由引用的 ADR、契约或源码是否属实且支持该档位，写 `[编号] 改档成立` 或 `[编号] 改档不成立`。部分修复写未修，状态词后尽量不加限定语（残留或原因另起一句），新发现只针对本轮修复改过的文件。每个待复核编号都要在原文中写出；检查器只核对编号是否出现，状态以主代理的分流表为准，由人工终审对照原文核对。有 challenge 的新协议还要求子代理把收到的待复核编号原样写入 seal 的 `--pending-ids`，供 qa-check 在自述凭据路径提示复审输入是否完整。
+子代理对上轮每个本次修编号写 `[编号] 已修`、`[编号] 未修` 或 `[编号] 修错`；对每个给出的驳回或转专项编号核对理由引用的 ADR、契约或源码是否属实且支持该档位，写 `[编号] 改档成立` 或 `[编号] 改档不成立`。部分修复写未修，状态词后尽量不加限定语（残留或原因另起一句），新发现只针对本轮修复改过的文件并严格接续 challenge `nextIds`。每个待复核编号都要在原文中写出；检查器只核对编号是否出现，状态以主代理的分流表为准，由人工终审对照原文核对。有 challenge 的新协议还要求子代理把收到的待复核编号原样写入 seal 的 `--pending-ids`，供 qa-check 在自述凭据路径提示复审输入是否完整。

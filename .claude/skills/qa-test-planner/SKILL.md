@@ -29,7 +29,7 @@ description: "QA 测试规划器：根据 spec 生成 Schema 4 的 qa-plan.md（
 
 ### Schema 4 输出契约
 
-计划声明 `QA Schema: 4`、`QA Mode: inline|independent`、可选 `QA Kind: feature|fix`（默认 feature）；新计划默认声明 `QA Review Coverage: 2`（由 acceptance 生成带 `required` 分级的清单与预填骨架），`QA Review Coverage: 1` 或省略字段保持兼容。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers、Seam 和连续编号的验证断言：
+计划声明 `QA Schema: 4`、`QA Mode: inline|independent`、可选 `QA Kind: feature|fix`（默认 feature）；新计划默认声明 `QA Review Coverage: 2`（由 acceptance 生成按过程脚本/测试文件聚合的分组 `reviewUnits` 清单、哈希继承字段与预填骨架），`QA Review Coverage: 1` 或省略字段保持兼容。未实质改动源码或测试的存量回归测试由机器校验与风险抽检兜底，仅将真正高风险核心行为标为 `P0`。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers、Seam 和连续编号的验证断言：
 
 ```markdown
 QA Schema: 4

@@ -11,7 +11,7 @@
        └─[3B. 测试规划] /qa-test-planner → qa-plan.md → qa-check plan → init 建基线并冻结计划
 [4. 实现] /implement（标准）或 /implement-spec（慢）+ add（按需）+ TDD + qa-run → 单元、集成与静态检查
 [5. 真实验收] 按接缝执行 → qa-check acceptance（输出对账表）
-[6. 双轴审查] collect → 调用 /code-review → review/ 原文落盘 → 三档分流 → 增量复审，自动上限 2 轮（r2、r3）
+[6. 双轴审查] collect → 调用 /code-review → review/ 原文落盘 → 三档分流 → 增量复审，自动上限 1 轮（r2，超限入 WAITING_HUMAN）
 [7. 交付收口] 最终交付验证 → qa-check review（机器校验通过）→ 人工终审清单
 ```
 
@@ -69,7 +69,7 @@
 
 ### 2. 测试规划（阶段 3B）
 
-标准车道在 spec 后、慢车道在 `/to-tickets` 后运行 `/qa-test-planner`，默认 inline。新计划声明 `QA Review Coverage: 2`（自动生成含 `required` 必审分级清单与预填骨架 `spec-review-skeleton.md`；旧计划 `QA Review Coverage: 1` 或省略保持兼容）。Schema 4 最小结构：
+标准车道在 spec 后、慢车道在 `/to-tickets` 后运行 `/qa-test-planner`，默认 inline。新计划声明 `QA Review Coverage: 2`（平滑扩展分组 `reviewUnits`、哈希继承与预填骨架 `spec-review-skeleton.md`；旧计划 `QA Review Coverage: 1` 或省略保持兼容）。Schema 4 最小结构：
 
 ```markdown
 QA Schema: 4
@@ -112,7 +112,7 @@ QA Review Coverage: 2
 
 - 已有 `_qa/scope.json` 时不再 init；没有时在改第一行代码前 init。需要扩大范围时运行 `node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>`。
 - 单文件测试使用 `pnpm --filter @repo/web test "<相对 apps/web 的路径>"`；含 `[id]` 的路径必须加引号。
-- 每个垂直切片遵循 TDD 红绿循环；写码前先用 qa-run 落盘见证断言失败的红灯（推荐标签 `red-<切片或工单>`），绿灯不可替代；隔离 worktree 中的红绿日志合并前复制回主工作区。命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（过程脚本可用 `--script <path>`），同名不可覆盖；同 argv、同 tree、exit 0 日志可复用。阶段 4 收尾可先跑 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 1 秒清除静态违规（不替代语义复核）。
+- 每个垂直切片遵循 TDD 红绿循环；写码前先用 qa-run 落盘见证断言失败的红灯（推荐标签 `red-<切片或工单>`），绿灯不可替代；隔离 worktree 中的红绿日志合并前复制回主工作区。命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（过程脚本可用 `--script <path>`，ego-browser 脚本优先用 `--executor ego-browser --script <path>` 淘汰双文件包装），同名不可覆盖；同 argv、同 tree、exit 0 日志可复用。阶段 4 收尾可先跑 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 1 秒清除静态违规（不替代语义复核）。
 - unit/integration 的 PASS 行在「绑定」列写 `` `<测试文件>` › <用例标题> ``（文件相对仓库根，标题取源码叶子标题，参数化按源码字面写法）；绑定写错只改执行记录，不重跑。
 
 ### 4. 真实验收（阶段 5）
@@ -136,21 +136,20 @@ QA Review Coverage: 2
 
 `code-review` 使用本仓内聚的单一中文指令，按下列项目规则执行：
 
-1. **collect**：运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`。collect 默认运行 `qa-preflight`（伪断言与交付命令不一致阻断，可 `--skip-preflight` 应急），写入 `_qa/review-challenge.json`、含 `qaArtifactsDigest`（覆盖 `scripts/`、`screenshots/` 及去交付段的 `qa-plan.md`）的 manifest，以及 `specReviewChecklist`。再次 collect 换 nonce，旧凭据失效；范围外属于本任务先 add 再 collect，其他记 `## 范围说明`；禁 `git add -N` 或自动 commit。
-2. **双轴**：用 Skill 工具调用 `code-review`，参数写明特性目录与轮次（派发、编号、封存只在技能内，不要用 Agent 工具自行派审查子代理）。有 challenge 时子代理自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`，`seal` 共用 `qa-check` 规则同步拦截无编号/漏复核编号/对账缺陷且不生成 `.source.json`；最终返回 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`。Spec `## 对账覆盖`：v1 五列逐项复制实测/绑定；v2 四列仅响应 `required` 行并在非 `required` 时写 `## 抽检范围`；全版本均须命中 ±5 行测试/断言谓词（封堵 `:1`）并归一化路径前缀，变更项判 `变更成立`/`变更不成立`，未核实阻塞、不成立 FAIL。
-   - `r1` 必须双轴齐全；`r2+` 审查包 `treeDigest` 未变且仅修改分流或轨迹文字时，只需有待复核编号的轴产出最新轮原文，另一轴可沿用同一 `treeDigest` 的旧轮次。执行记录、绑定、日志或截图变化时 Spec 轴必须复审，过程脚本变化时 Standards 与 Spec 双轴必须复审；主代理在复审输入列明 QA 产物变化，检查器不猜测变化语义，由人工终审核对。
-   - 审查子代理默认只读静态核对，不重跑测试套件、`typecheck`、`lint` 或启动服务；不得读取同轮另一轴原文，也不得跨特性读取其他 `.scratch/` 目录。
-   - 子代理报超时或 `no_final_message` 时，先核对对应 `review/` 原文与 `.source.json` 是否已匹配当前 nonce 与哈希；齐全一致即认领为独立审查完成，不追问、不 `resume`。
-3. **编号含义**：原文每条发现以 `[S-H<n>]`（规范硬违规）、`[S-J<n>]`（规范判断）、`[P-M<n>]`（缺失或部分实现）、`[P-W<n>]`（实现有误）、`[P-X<n>]`（范围蔓延）开头；无发现写「无发现」，不带编号（检查器也忽略「编号 + 无发现」的写法）。
-4. **三档分流**：`review-report.md` 只含 `审查方式：` 一行（`宿主=<宿主名>；` 开头可作为说明，如 `审查方式：宿主=Kimi Code；两轴独立子代理`；有 challenge 的新轮次 qa-check 按证据判定，不据此选择路径）、`## 三档分流` 表（编号、档位、处置状态、轮次轨迹、验证证据、理由）、按需的 `## 默认驳回`、`## 修复尝试记录` 与 `## 范围说明`。分流表与默认驳回清单共同构成缺陷清单，分流表是唯一流程状态源；执行方按审查原文将需处置发现逐条进表，其余 S-J 进默认驳回清单，检查器不从正文自动发现缺陷，只核对已列编号有原文依据，漏列由人工终审对照原文发现。当前档位与处置状态写当前事实，历史变化写轮次轨迹，转专项或改档成立不锁定后续修复；处置状态由执行方按审查原文填写，忠实于原文由人工终审确认；`review/` 原文只作审计材料，格式问题不得成为修改原文的理由。两轴无发现时表下写「无发现」。
-   - S-H、P-M、P-W 默认本次修，改档须写理由，驳回引用 ADR 或契约。
-   - S-J 默认驳回且不必进表（驳回表示接受不修，不代表发现无效）；未进表者在 `## 默认驳回` 中集中列出编号与原文位置，不强制逐条理由，人工终审对照清单与原文。需要修、转专项或单独说明风险的才进表，理由写成本收益即可，无需 ADR。仅当问题由本特性改动引入、修复不改变 spec 之外的行为、且只动 r1 审查 diff 已触及的文件及其配套测试时改为本次修，需要动其他文件的一律不在本次修。
-   - P-X 默认本次修，修法是撤回越界改动；确属 spec 要求的引 spec 驳回；有独立价值的先撤回再转专项，不得把越界代码留在本次改动里。
-   - 转专项理由须写明问题证据、本次不修的依据和后续跟踪位置。
-   - 正文提及的范围外既有工作区状态记入 `## 范围说明`，不修改、不还原。
-   - 处置状态为「已修」的行，验证证据写修复后产生的 `evidence/` 或 `screenshots/` 文件（反引号路径，qa-run 日志须 exit 0），不涉及行为的修复写「静态：<理由>」；不以文件 mtime 判断先后，事件时间可核验时日志 `started` 须晚于轮次轨迹所指的缺陷审查返回；其他行可留空。
-5. **增量复审**：有本次修，或有 S-H、P-M、P-W 类被驳回或转专项时，重新 collect 做增量复审，自动上限 2 轮（r2、r3）。复审输入给完整审查包、审查者自己的历次原文、spec、待复核编号（上轮本次修，以及上一轮被驳回或转专项的 S-H、P-M、P-W 行的编号与理由），以及主代理列出的本轮修复改过的文件与 QA 产物变化；Spec 轴另给当前截图，不提供修复尝试记录。复审对上轮本次修编号逐条判 `已修`、`未修` 或 `修错`，对给出的改档编号判 `改档成立` 或 `改档不成立`（部分修复写未修，状态词后尽量不加限定语），新发现只针对本轮修复改过的文件，新编号接续。判改档不成立的条目改为本次修，不得再次改档。待复核轮次以分流表的轮次轨迹为锚，不以编号在正文中的首次出现为准；上轮本次修编号与 S-H、P-M、P-W 改档编号须出现在对应轴（S-* 为 Standards、P-* 为 Spec）其后一轮的原文中，否则 `qa-check review` 报 BLOCKED（`FINDING_NOT_REREVIEWED`）；检查器只看编号是否出现，不解析结论。修复前必须读修复尝试记录，不重复已判失败的改法。
-6. **用尽上限**：r3 后分流表仍有未修、修错、改档不成立，或待复审编号没有出现在复审原文时，停止自动修复，照常执行阶段 7，`qa-check review` 输出 BLOCKED（`UNRESOLVED_FINDINGS`），分流表即待裁决清单交人工。人工在理由列写明裁决，机器结果保持 BLOCKED，不为拿到 PASS 改表；人工授权的追加修复轮不计入自动上限。
+1. **collect 与不可变快照**：运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`。collect 默认运行 `qa-preflight` 与 2 秒可封存性预检（无含真实断言谓词的候选或产物失鲜即报 `PACKAGE_INVALID` 阻断，不派发审查；可用 `--skip-preflight` 应急）。collect 生成轻量不可变快照 `_qa/round-snapshots/r<n>/`（含 SHA-256 manifest）、搬家 Rename 折叠与全量基线 diff、`r2+` 相邻快照间机器差分 `_qa/review-package-delta.diff` 及 `< 3 KB` `_qa/review-brief.md`，并扫描全历史原文（含未 `seal`）写入 `reservedIds`/`nextIds` 至 `_qa/review-challenge.json`，同步写入含 `qaArtifactsDigest` 的 manifest 与 `specReviewChecklist`。超默认自动上限（`r3+`）时 collect 默认拒绝并提示进入 `WAITING_HUMAN`，仅人工显式 `--allow-manual-round` 放行。再次 collect 换 nonce，旧凭据失效；范围外属于本任务先 add 再 collect，其他记 `## 范围说明`；禁 `git add -N` 或自动 commit。
+2. **双轴、错误路由与冻结屏障**：用 Skill 工具调用 `code-review`，参数写明特性目录与轮次（派发、编号、封存只在技能内，不要用 Agent 工具自行派审查子代理）。
+   - **全输入双轴终态屏障**：双轴派发后至两轴全达终态前，严禁编辑任何代码、测试、`spec.md`、`scope.json`、`qa-plan.md`、术语或脚本/截图；若 live 工作区偏离当轮快照，子代理仍可基于快照完成 `seal` 留证，但 `qa-check` 必判该轮 **`SUPERSEDED`**（`BLOCKED`）。
+   - **封存与三类错误路由**：有 challenge 时子代理基于当轮不可变快照自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`（拦截无编号、编号撞号 `FINDING_ID_COLLISION`、漏复核、对账或 `±5` 行谓词缺口），返回 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`。错误只分三类：**`REVIEWER_EDITABLE`**（行号/表格错，同轮最多重试 **1 次** `seal`）、**`PACKAGE_INVALID`**（候选/快照/失鲜包错，审查者立刻停交主代理重建包）、**`INFRA_UNAVAILABLE`**（429/配额/宿主失败，立刻停交用户，禁换模型禁重派）。
+   - **Spec 对账**：`Coverage: 1` 五列逐项复制；`Coverage: 2` 四列基于按脚本/测试分组的 `reviewUnits` 响应必审/失效单元并写 `## 抽检范围`（未实质改动源码的存量回归机检+抽检，安全/权限/计费/`changed`/非 PASS 永不降级，`r2+` 同哈希自动继承且支持回查全量快照基线）；全版本命中 `±5` 行测试/断言谓词（封堵 `:1`）并归一化路径，变更项判 `变更成立`/`变更不成立`。
+   - **单轴复用与隔离**：`r1` 双轴齐全；`r2` 审查包 `treeDigest` 未变且仅修改分流或轨迹文字时只需有待复核编号的轴产出原文，另一轴沿用同一 `treeDigest` 旧轮次（执行记录、绑定、日志或截图变化时 Spec 轴必须复审，过程脚本变化时 Standards 与 Spec 双轴必须复审）；审查子代理只读静态核对，不重跑测试套件、`typecheck`、`lint` 或启动服务，不得读取同轮另一轴原文，也不得跨特性读取其他 `.scratch/` 目录；子代理报超时或 `no_final_message` 时，先核对磁盘原文与 `.source.json` 是否已匹配当前 nonce 与哈希，齐全一致即认领。
+3. **编号含义**：Standards `[S-H<n>]`（可用性/无障碍/明文禁令与真实行为/生命周期/竞态缺陷）、`[S-J<n>]`（视觉配方与可维护性建议，不做前缀机器硬锁）；Spec `[P-M<n>]`（缺失/部分实现）、`[P-W<n>]`（实现有误）、`[P-X<n>]`（范围蔓延）；无发现写「无发现」，不带编号。跨轮同编号复用不同语义报 `FINDING_ID_COLLISION`。
+4. **三档分流与自动骨架**：两轴落盘后可用 `node tooling/scripts/review-package.mjs scaffold-report .scratch/<feature>` 自动预生成无漏项 `review-report.md` 骨架（含 `审查方式：宿主=<宿主名>；`、`## 三档分流`、`## 默认驳回`、`## 修复尝试记录`、`## 范围说明`）。先分流再修，真实阻断与可维护性 `S-J` 分批不捆绑；分流表是唯一流程状态源，不改写 `review/` 原文。
+   - `S-H`、`P-M`、`P-W` 默认本次修，改档须写理由，驳回引用 ADR 或契约。
+   - S-J 默认驳回且不必进表（进 `## 默认驳回` 列编号与原文位置，不强制逐条理由）；确需修、转专项或单列风险才进表，仅在只动已触及范围及配套测试且不扩行为时改为本次修。
+   - `P-X` 默认本次修（撤回越界改动）；转专项写明证据、本次不修依据与跟踪位置；范围外既改记入 `## 范围说明`。
+   - 「已修」行验证证据写修复后 `evidence/` 或 `screenshots/` 路径或 `静态：<理由>`，日志 `started` 须晚于对应缺陷审查返回。
+5. **增量复审与 1 轮自动上限（`ADR-0066`）**：有本次修，或有 `S-H`、`P-M`、`P-W` 驳回/转专项时重新 collect 做增量复审，**自动上限 1 轮（`r2`）**。复审默认提供 `review-brief.md`、`review-package-delta.diff`、不可变全量快照基线（按需回查交互）、审查者自己历次原文、spec、待复核编号与理由及 QA 产物变化（Spec 轴另给当前截图，不给修复尝试记录）。对上轮本次修判 `已修`/`未修`/`修错`，对改档判 `改档成立`/`改档不成立`（不成立改为本次修，不得再次改档），新发现只针对本轮修复改过的文件且严格接续登记器 `nextIds`。上轮待复审编号须出现在对应轴其后一轮原文中，否则 `BLOCKED`（`FINDING_NOT_REREVIEWED`）。修复前必读修复尝试记录，不重复失败改法。
+6. **正式暂停终态（`WAITING_HUMAN` / `PACKAGE_INVALID` / `WAITING_INFRA`）**：`r2` 后仍有未修、修错、改档不成立或漏复审时，停止自动修复，照常执行阶段 7，`qa-check review` 输出 `BLOCKED`（`UNRESOLVED_FINDINGS`）及正式暂停终态 **`WAITING_HUMAN`** 与人工决策包摘要；包错停在 **`PACKAGE_INVALID`**、基础设施失败停在 **`WAITING_INFRA`**，均不为拿 PASS 改表。人工在理由列写裁决，或显式授权 `--allow-manual-round` 追加修复轮。
 7. **合法暂停**：未实际调用或拿不到两份真实独立返回时保持“待独立审查”；宿主无独立上下文能力时，collect 后只交付审查包，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。外部会话必须由用户启动，主代理不得自动启动无头审查者。
 
 ### 6. 交付验证（阶段 7）

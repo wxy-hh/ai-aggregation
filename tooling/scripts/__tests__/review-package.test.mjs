@@ -108,7 +108,7 @@ test('快照只包含开工后的修改、创建和删除，不改变 index，�
   assert.deepEqual(new Set(manifest.changedFiles), new Set(['tracked.txt', 'created.txt', 'delete-me.txt', 'existing-untracked.txt']));
   // Schema 4：机器状态只写入 _qa/，特性目录顶层不再生成（TC01-3）
   assert.deepEqual((await readdir(feature)).sort(), ['_qa']);
-  assert.deepEqual((await readdir(path.join(feature, '_qa'))).sort(), ['prechange', 'review-challenge.json', 'review-package.diff', 'review-package.json', 'scope.json']);
+  assert.deepEqual((await readdir(path.join(feature, '_qa'))).sort(), ['prechange', 'review-brief.md', 'review-challenge.json', 'review-package.diff', 'review-package.json', 'round-snapshots', 'scope.json']);
 });
 
 test('开工前未跟踪内容未改变时不会进入审查包', async (t) => {
@@ -425,7 +425,7 @@ test('collect 未指定轮次时按最新已有轮次推导（单轴与跳轮）
 
   await writeFile(path.join(feature, 'review', 'r3-standards.md'), '[S-J1] 判断建议\n');
   await writeFile(path.join(feature, 'review', 'r3-spec-axis.md'), '[P-M1] 缺失\n');
-  assert.equal(runArgs(dir, ['collect', feature]).status, 0);
+  assert.equal(runArgs(dir, ['collect', feature, '--allow-manual-round']).status, 0);
   assert.equal(JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8')).round, 'r4');
 });
 

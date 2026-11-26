@@ -2377,7 +2377,7 @@ test('TC03-4 已闭环轨迹的旧编号不再误报缺少复审必交编号', a
   await writeRaw(feature, 3, { standards: '无发现\n', spec: '[P-M1] 已修\n' });
   await writeRaw(feature, 4, { standards: '无发现\n', spec: '[P-M1] 已修（维持）\n' });
   await writeRaw(feature, 5, { standards: '无发现\n', spec: '[P-M1] 已修（维持）\n' });
-  const collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature, '--round', 'r5'], {
+  const collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature, '--round', 'r5', '--allow-manual-round'], {
     cwd: dir,
     encoding: 'utf8',
   });
@@ -3603,7 +3603,8 @@ test('端到端 QA Review Coverage: 2：acceptance 生成骨架、seal 拦截 :1
 
   await writeFile(path.join(feature, 'qa-plan.md'), buildPlan('BLOCKED'));
   assert.equal(spawnSync(process.execPath, [QA_RUN, feature, 'gate-plan-1', '--', process.execPath, QA_CHECK, 'plan', feature], { cwd: dir, encoding: 'utf8' }).status, 0);
-  assert.equal(spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt'], { cwd: dir, encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt', 'tests/p0.test.mjs'], { cwd: dir, encoding: 'utf8' }).status, 0);
+  await writeFile(path.join(dir, 'tests', 'p0.test.mjs'), `${await readFile(path.join(dir, 'tests', 'p0.test.mjs'), 'utf8')}// 本轮新增或变更的 P0 特性单测\n`);
 
   await writeFile(path.join(feature, 'qa-plan.md'), buildPlan('PASS'));
   assert.equal(spawnSync(process.execPath, [QA_RUN, feature, 'run', '--', process.execPath, '--test', 'tests/p0.test.mjs', 'tests/p1.test.mjs'], { cwd: dir, encoding: 'utf8' }).status, 0);
