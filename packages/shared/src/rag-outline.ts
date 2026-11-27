@@ -74,9 +74,10 @@ export function formatOutlineTreeToMarkdown(
   }
 
   function renderNodes(nodes: DocumentOutlineNode[], currentDepth: number) {
+    // 统一按大纲树结构深度截断，确保跳级标题或非一级标题起头时不会误吞子节点
+    if (currentDepth > maxDepth) return;
     for (const node of nodes) {
-      if (node.level > maxDepth) continue;
-      const indent = '  '.repeat(Math.max(0, node.level - 1));
+      const indent = '  '.repeat(Math.max(0, currentDepth - 1));
       const chunkRangeText =
         node.chunkRange[0] === node.chunkRange[1]
           ? `切片 #${node.chunkRange[0]}`
