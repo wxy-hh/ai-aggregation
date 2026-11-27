@@ -253,7 +253,7 @@ async function runEvidence(repo, featureArgument, label, argv, { executor = null
       exitCode = 1;
       const diagnostic = `[qa-run] EMPTY_EVIDENCE：${emptyReason}，不能把 exit 0 当作有效绿证据\n`;
       await handle.writeFile(diagnostic, 'utf8');
-      console.error(diagnostic.trimEnd());
+      reportToolError(diagnostic.trimEnd());
     }
     const exitDescription = startupError ? '127' : emptyReason ? '1' : signal ? `signal ${signal}` : String(code ?? 1);
     const finished = new Date().toISOString();
@@ -317,9 +317,13 @@ async function resolveExecutionSpec({ repo, scriptPath, executor, extraArgs }) {
   return { argv: extraArgs, executor: null, script: null, stdinContent: null };
 }
 
+function reportToolError(message) {
+  console.error(`[qa-run][ERROR] ${String(message ?? '')}`);
+}
+
 async function main() {
   if (Number(process.versions.node.split('.')[0]) < 22) {
-    console.error(`qa-run 需要 Node.js >=22，当前为 ${process.version}；目标命令尚未启动。`);
+    reportToolError(`qa-run 需要 Node.js >=22，当前为 ${process.version}；目标命令尚未启动。`);
     process.exitCode = 1;
     return;
   }
@@ -340,7 +344,7 @@ async function main() {
       if (arg === '--executor') {
         const next = rest[i + 1];
         if (!next || next === '--') {
-          console.error('用法错误：--executor 缺少执行器名称（ego-browser | node | sh）');
+          reportToolError('用法错误：--executor 缺少执行器名称（ego-browser | node | sh）');
           process.exitCode = 1;
           return;
         }
@@ -351,7 +355,7 @@ async function main() {
       if (arg === '--script' && !scriptPath) {
         const next = rest[i + 1];
         if (!next || next === '--') {
-          console.error('用法错误：--script 缺少脚本路径');
+          reportToolError('用法错误：--script 缺少脚本路径');
           process.exitCode = 1;
           return;
         }
@@ -367,7 +371,7 @@ async function main() {
     cmdArgs.push(arg);
   }
   if (!feature || !label || (!scriptPath && !cmdArgs.length)) {
-    console.error('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...> 或 [--executor ego-browser|node|sh] --script <path> [-- <args...>]');
+    reportToolError('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...> 或 [--executor ego-browser|node|sh] --script <path> [-- <args...>]');
     process.exitCode = 1;
     return;
   }
@@ -375,19 +379,19 @@ async function main() {
   try {
     spec = await resolveExecutionSpec({ repo: process.cwd(), scriptPath, executor, extraArgs: cmdArgs });
   } catch (error) {
-    console.error(error.message);
+    reportToolError(error.message);
     process.exitCode = 1;
     return;
   }
   const finalArgv = spec.argv;
   if (!finalArgv.length) {
-    console.error('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...> 或 [--executor ego-browser|node|sh] --script <path> [-- <args...>]');
+    reportToolError('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...> 或 [--executor ego-browser|node|sh] --script <path> [-- <args...>]');
     process.exitCode = 1;
     return;
   }
   // 整串命令被当成单个参数时 spawn 必然 ENOENT；在写日志前拦下，不占用标签
   if (finalArgv.length === 1 && /\s/.test(finalArgv[0]) && !existsSync(path.resolve(finalArgv[0]))) {
-    console.error(`用法错误：命令需按参数拆开传入，不要整串加引号。\n正确示例: node tooling/scripts/qa-run.mjs ${feature} ${label} -- ${finalArgv[0]}`);
+    reportToolError(`用法错误：命令需按参数拆开传入，不要整串加引号。\n正确示例: node tooling/scripts/qa-run.mjs ${feature} ${label} -- ${finalArgv[0]}`);
     process.exitCode = 1;
     return;
   }
@@ -398,7 +402,7 @@ async function main() {
       stdinContent: spec.stdinContent,
     });
   } catch (error) {
-    console.error(error.message);
+    reportToolError(error.message);
     process.exitCode = 1;
   }
 }

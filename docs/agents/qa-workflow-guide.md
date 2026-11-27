@@ -100,6 +100,8 @@ node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r2 --axi
 node tooling/scripts/qa-run.mjs .scratch/<feature> gate-review-final -- node tooling/scripts/qa-check.mjs review .scratch/<feature>
 ```
 
+qa-run 自身错误统一以 `[qa-run][ERROR]` 开头；调用方必须检查本次命令退出状态，不能用管道过滤后的输出或旧日志末尾的 `exit 0` 代替本次结果。重名日志失败时换新标签，不覆盖旧证据。
+
 `init` 前执行记录不得有 PASS 行；基线红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志。`tooling/`、`docs/`、`.claude/` 等与工作流共用的目录，路径白名单写到具体文件。
 
 ---

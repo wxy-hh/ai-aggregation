@@ -77,6 +77,73 @@ function sealArgs(feature, overrides = {}) {
   ];
 }
 
+async function sealStateDigests(feature) {
+  const files = {
+    report: 'review/r1-standards.md',
+    receipt: 'review/r1-standards.source.json',
+    challenge: '_qa/review-challenge.json',
+    manifest: '_qa/review-package.json',
+  };
+  return Object.fromEntries(await Promise.all(Object.entries(files).map(async ([key, relative]) => {
+    const content = await readFile(path.join(feature, relative));
+    return [key, createHash('sha256').update(content).digest('hex')];
+  })));
+}
+
+async function reReviewFixture(t, { bodyOnly = false, legacyReference = false } = {}) {
+  const { dir, feature } = await collected(t, { round: 'r2' });
+  await writeFile(path.join(feature, 'spec.md'), '## User Stories\n1. 复审语义一致\n\n## 交付命令\n\n```bash\nnode --version\n```\n');
+  await writeFile(path.join(feature, 'qa-plan.md'), [
+    'QA Schema: 4',
+    'QA Mode: inline',
+    '',
+    '### TC01: 复审夹具',
+    '- Priority: P1',
+    '- Covers: 1',
+    '- Seam: unit',
+    '',
+    '#### 验证断言',
+    '1. 保持阻塞以便继续原文核对。',
+    '',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| TC01 | 1 | BLOCKED | 尚未执行 | | |',
+    '',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `node --version` | 待执行 |',
+  ].join('\n'));
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '[S-H1] 原始硬违规\n');
+  await writeFile(path.join(feature, 'review', 'r1-spec-axis.md'), '无发现\n');
+  await writeFile(
+    path.join(feature, 'review', 'r2-standards.md'),
+    legacyReference
+      ? '- 关于 **[S-H1]**：已复核\n'
+      : bodyOnly ? '正文仅引用 S-H1，没有给出复审响应。\n' : '## S-H1 已修\n',
+  );
+  await writeFile(path.join(feature, 'review', 'r2-spec-axis.md'), '无新增审查发现\n');
+  const standardsSeal = runArgs(dir, [
+    ...sealArgs(feature, { round: 'r2', file: 'review/r2-standards.md', host: 'Kimi Code' }),
+    '--pending-ids', 'S-H1',
+  ]);
+  const specSeal = runArgs(dir, sealArgs(feature, {
+    round: 'r2', axis: 'spec', file: 'review/r2-spec-axis.md', host: 'Kimi Code',
+  }));
+  assert.equal(specSeal.status, 0, specSeal.stderr);
+  await writeFile(path.join(feature, 'review-report.md'), [
+    '审查方式：宿主=Kimi Code；两轴独立子代理',
+    '',
+    '## 三档分流',
+    '| 编号 | 档位 | 处置状态 | 轮次轨迹 | 验证证据 | 理由 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| S-H1 | 本次修 | 已修 | r1 → r2 已修 | 静态：测试夹具 | |',
+  ].join('\n'));
+  return { dir, feature, standardsSeal };
+}
+
 test('快照只包含开工后的修改、创建和删除，不改变 index，且机器状态只写入 _qa', async (t) => {
   const dir = await repo(t);
   const feature = path.join(dir, '.scratch', 'feature');
@@ -695,4 +762,105 @@ test('seal 在写凭据前同步阻断无效原文（无编号、漏待复核、
     '--pending-ids', 'S-H1',
   ]);
   assert.equal(okSeal.status, 0, okSeal.stderr);
+});
+
+test('TC04-1 相同原文重复 seal 失败且四类文件不变', async (t) => {
+  const { dir, feature } = await collected(t);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '[S-J1] 判断建议\n');
+  assert.equal(runArgs(dir, sealArgs(feature)).status, 0);
+  const before = await sealStateDigests(feature);
+
+  const replay = runArgs(dir, sealArgs(feature));
+  assert.equal(replay.status, 1);
+  assert.match(replay.stderr, /PACKAGE_INVALID/);
+  assert.deepEqual(await sealStateDigests(feature), before);
+});
+
+test('TC04-2 修改原文重复 seal 不覆盖 returned 状态', async (t) => {
+  const { dir, feature } = await collected(t);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  const report = path.join(feature, 'review', 'r1-standards.md');
+  await writeFile(report, '[S-J1] 判断建议\n');
+  assert.equal(runArgs(dir, sealArgs(feature)).status, 0);
+  await writeFile(report, '[S-J1] 判断建议（重复代理改写）\n');
+  const before = await sealStateDigests(feature);
+
+  const replay = runArgs(dir, sealArgs(feature));
+  assert.equal(replay.status, 1);
+  assert.match(replay.stderr, /PACKAGE_INVALID/);
+  assert.deepEqual(await sealStateDigests(feature), before);
+  const challenge = JSON.parse(await readFile(path.join(feature, '_qa/review-challenge.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(path.join(feature, '_qa/review-package.json'), 'utf8'));
+  assert.equal(challenge.axes.standards.terminalState, 'returned');
+  assert.equal(manifest.axes.standards.terminalState, 'returned');
+});
+
+test('TC04-3 startedAt 仅表示首次 seal 尝试事件', async (t) => {
+  const { dir, feature } = await collected(t);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  const report = path.join(feature, 'review', 'r1-standards.md');
+  await writeFile(report, '没有编号也没有整局结论\n');
+  const failed = runArgs(dir, sealArgs(feature));
+  assert.equal(failed.status, 1);
+  const failedChallenge = JSON.parse(await readFile(path.join(feature, '_qa/review-challenge.json'), 'utf8'));
+  const firstStartedAt = failedChallenge.axes.standards.startedAt;
+
+  await writeFile(report, '[S-J1] 判断建议\n');
+  assert.equal(runArgs(dir, sealArgs(feature)).status, 0);
+  const receipt = JSON.parse(await readFile(path.join(feature, 'review/r1-standards.source.json'), 'utf8'));
+  assert.equal(receipt.startedAt, firstStartedAt);
+  assert.ok(Date.parse(receipt.completedAt) >= Date.parse(receipt.startedAt));
+  const before = await sealStateDigests(feature);
+
+  assert.equal(runArgs(dir, sealArgs(feature)).status, 1);
+  assert.deepEqual(await sealStateDigests(feature), before);
+});
+
+test('TC06-1 collect 与分流骨架复用同一 FindingId 登记', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  assert.equal(run(dir, 'init', feature, ['tracked.txt']).status, 0);
+  await writeFile(path.join(dir, 'tracked.txt'), '原始行\n本任务修改\n');
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(
+    path.join(feature, 'review', 'r1-standards.md'),
+    '## S-H2：无方括号标题\n\n[S-J1] 历史行首方括号\n\n正文引用 [S-J9]，不得登记。\n',
+  );
+  await writeFile(path.join(feature, 'review', 'r1-spec-axis.md'), '[P-M1] 缺失\n');
+  assert.equal(runArgs(dir, ['collect', feature, '--round', 'r2']).status, 0);
+  const { scanHistoricalFindingIds } = await import(new URL('../review-package.mjs', import.meta.url).href);
+  const historical = await scanHistoricalFindingIds(feature, { upToRound: 2 });
+  const challenge = JSON.parse(await readFile(path.join(feature, '_qa/review-challenge.json'), 'utf8'));
+  assert.deepEqual([...challenge.reservedIds].sort(), historical.allIds.sort());
+  assert.deepEqual(challenge.nextIds, historical.nextIds);
+
+  assert.equal(runArgs(dir, ['scaffold-report', feature]).status, 0);
+  const report = await readFile(path.join(feature, 'review-report.md'), 'utf8');
+  assert.match(report, /S-H2/);
+  assert.match(report, /S-J1/);
+  assert.match(report, /P-M1/);
+  assert.doesNotMatch(report, /S-J9/);
+});
+
+test('TC06-2 seal 与 qa-check 使用同一复审响应语义', async (t) => {
+  const { checkFeature } = await import(new URL('../qa-check.mjs', import.meta.url).href);
+  const supported = await reReviewFixture(t);
+  assert.equal(supported.standardsSeal.status, 0, supported.standardsSeal.stderr);
+  const supportedReport = await checkFeature(supported.feature, 'review');
+  assert.ok(!supportedReport.issues.some((item) => item.code === 'FINDING_NOT_REREVIEWED'));
+
+  const legacy = await reReviewFixture(t, { legacyReference: true });
+  assert.equal(legacy.standardsSeal.status, 0, legacy.standardsSeal.stderr);
+  const legacyReport = await checkFeature(legacy.feature, 'review');
+  assert.ok(!legacyReport.issues.some((item) => item.code === 'FINDING_NOT_REREVIEWED'));
+
+  const referenced = await reReviewFixture(t, { bodyOnly: true });
+  assert.equal(referenced.standardsSeal.status, 1);
+  assert.match(referenced.standardsSeal.stderr, /FINDING_NOT_REREVIEWED/);
+  assert.match(referenced.standardsSeal.stderr, /S-H1/);
+  const referencedReport = await checkFeature(referenced.feature, 'review');
+  const missing = referencedReport.issues.find((item) => item.code === 'FINDING_NOT_REREVIEWED');
+  assert.ok(missing, JSON.stringify(referencedReport.issues));
+  assert.match(missing.message, /S-H1/);
 });

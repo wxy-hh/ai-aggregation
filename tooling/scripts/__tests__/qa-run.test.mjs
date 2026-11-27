@@ -395,3 +395,36 @@ test('普通命令中自带 --script 参数时不被 qa-run 劫持', async (t) =
     'literal.mjs',
   ]);
 });
+
+test('TC05-1 重名日志错误带统一前缀且旧日志不变', async (t) => {
+  const dir = await repo(t);
+  assert.equal(run(dir, 'same').status, 0);
+  const logPath = path.join(dir, '.scratch', 'feature', 'evidence', 'same.log');
+  const before = await readFile(logPath, 'utf8');
+  const duplicate = run(dir, 'same');
+  assert.equal(duplicate.status, 1);
+  assert.ok(duplicate.stderr.startsWith('[qa-run][ERROR] '), duplicate.stderr);
+  assert.equal(await readFile(logPath, 'utf8'), before);
+});
+
+test('TC05-2 三类工具输入错误均有统一前缀', async (t) => {
+  const dir = await repo(t);
+  const results = [
+    run(dir, 'bad/label'),
+    spawnSync(process.execPath, [SCRIPT, '.scratch/feature', 'empty', '--'], { cwd: dir, encoding: 'utf8' }),
+    spawnSync(process.execPath, [SCRIPT, '.scratch/feature', 'bad-executor', '--executor', 'bogus', '--script', 'x.mjs'], { cwd: dir, encoding: 'utf8' }),
+  ];
+  for (const result of results) {
+    assert.notEqual(result.status, 0);
+    assert.ok(result.stderr.startsWith('[qa-run][ERROR] '), result.stderr);
+  }
+});
+
+test('TC05-3 被测命令标准错误与退出码保持原样', async (t) => {
+  const dir = await repo(t);
+  const result = run(dir, 'child-error', [process.execPath, '-e', 'console.error("子进程原始错误"); process.exit(7)']);
+  assert.equal(result.status, 7);
+  assert.match(result.stderr, /子进程原始错误/);
+  assert.ok(!result.stderr.startsWith('[qa-run][ERROR]'), result.stderr);
+  assert.doesNotMatch(result.stderr, /\[qa-run\]\[ERROR\] 子进程原始错误/);
+});

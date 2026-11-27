@@ -83,13 +83,13 @@ pnpm infra:logs
 
 ### review-package.mjs
 
-改代码前用 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径...>` 建立基线并冻结计划，需要扩大范围时用 `add`，审查时默认先执行 `qa-preflight` 静态预检（可用 `--skip-preflight` 应急跳过）与 2 秒可封存性预检（必审行缺少谓词候选即按 `PACKAGE_INVALID` 阻断），再由 `collect`（默认拒绝 `r3+`，人工授权追加须显式传 `--allow-manual-round`）生成含 Rename 折叠的 `review-package.diff`、`_qa/round-snapshots/r<n>/` 轻量不可变快照、`r2+` 相邻快照机器差量 `_qa/review-package-delta.diff`、`< 3 KB` 结构化 `_qa/review-brief.md`、含 `renames`/`snapshotDir` 的 `review-package.json` 及带全历史编号登记（`reservedIds`/`nextIds`）的 `_qa/review-challenge.json`。审查子代理写完原文后用 `seal` 基于当轮不可变快照同步校验编号（含跨轮碰撞）、`--pending-ids` 与 Spec 对账覆盖，并输出类型化错因（`REVIEWER_EDITABLE` / `PACKAGE_INVALID`）。`scaffold-report` 根据 `review/` 全部原文自动生成无漏项分流骨架；`digest` 输出当前范围 tree；这些命令均不改变 Git index，机器状态写入特性目录的 `_qa/`，禁止手改。
+改代码前用 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径...>` 建立基线并冻结计划，需要扩大范围时用 `add`，审查时默认先执行 `qa-preflight` 静态预检（可用 `--skip-preflight` 应急跳过）与 2 秒可封存性预检（必审行缺少谓词候选即按 `PACKAGE_INVALID` 阻断），再由 `collect`（默认拒绝 `r3+`，人工授权追加须显式传 `--allow-manual-round`）生成含 Rename 折叠的 `review-package.diff`、`_qa/round-snapshots/r<n>/` 轻量不可变快照、`r2+` 相邻快照机器差量 `_qa/review-package-delta.diff`、`< 3 KB` 结构化 `_qa/review-brief.md`、含 `renames`/`snapshotDir` 的 `review-package.json` 及带全历史编号登记（`reservedIds`/`nextIds`）的 `_qa/review-challenge.json`。审查子代理写完原文后用 `seal` 基于当轮不可变快照同步校验编号（含跨轮碰撞）、`--pending-ids` 与 Spec 对账覆盖，并输出类型化错因（`REVIEWER_EDITABLE` / `PACKAGE_INVALID`）；已有凭据时重复 seal 继续失败且不改写原文、凭据或轴状态，后续失败不得把 `returned` 降级。`scaffold-report` 根据 `review/` 全部原文自动生成无漏项分流骨架；`digest` 输出当前范围 tree；这些命令均不改变 Git index，机器状态写入特性目录的 `_qa/`，禁止手改。
 
 `OBS-1` 在 challenge、manifest 与 `.source.json` 记录轻量字段：`nonce`、`round`、`axis`（双轴集合存于 `axes`）、`snapshotHash`（快照 manifest 字节的 SHA-256）、`diffBytes`（实际 Diff 字节数）、`sealAttempts`（每轴 seal 尝试数）、`terminalState`/`errorClass` 与 `reviewUnits{total,inherited,verified}`（`total` 为单元总数，`inherited` 为合法继承数，`verified` 为合法继承或本轮明确核实数；collect 时未核实单元不计入 `verified`， sampled 单元不计入明确核实）。`dispatchedAt` 是 collect 发放 challenge 的代理时间，`startedAt`/`completedAt` 是该轴首次 seal 尝试与最终 seal 的事件时间，均不冒称模型真实派发、开始工作或推理时长；审查关键路径墙钟按 collect 的 `packagedAt` 到双轴最晚 `completedAt` 计算并注明该口径，不用首次 seal 到最后 seal 的差值冒称审查耗时。`repairAndWaitMs` 是本轮 `packagedAt` 距上一轮各轴最晚 `completedAt` 的毫秒数，首轮为 0。旧包缺少这些可选字段时仍按原契约读取，不重写历史快照。
 
 ### qa-run.mjs
 
-使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（或 `--script <path>` / `--executor <ego-browser|node|sh> --script <path>` 通过 stdin 驱动 `ego-browser nodejs` 并写入 `# executor:` 与 `# script:` 头字段）真实执行并记录 argv、HEAD、tree、时间和退出码；Node.js `<22` 在目标命令启动前失败，头部记录真实 `# node:` 版本。头部另记录 challenge 的 `nonce`、`round`、`snapshotHash`，无对应上下文时写 `none`；普通命令没有审查轴语义，`axis` 与 `dispatchedAt` 不伪造。尾部记录 `terminalState`、`errorClass`、`durationMs`（本命令从 started 到 finished 的实际墙钟毫秒数）与 `repairAndWaitMs`（继承 challenge 中本轮修复与审查等待毫秒数，无该上下文时为 0，不与命令耗时混算），新旧日志均可由 `parseRunLog()` 读取。日志位于特性 `evidence/` 且不可覆盖，失败或旧证据需换新标签。日志里的 `tree` 是**行为证据树**：只忽略根 `GLOSSARY.md`、`CONTEXT.md`、各目录 `README.md`、`docs/adr/` 与 `docs/features/` 中的 Markdown；其他 Markdown 默认计入，尤其保留源码旁由业务、构建或测试运行时读取的内容。豁免路径不得作为运行时内容源，且仍进入审查包 diff。
+使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（或 `--script <path>` / `--executor <ego-browser|node|sh> --script <path>` 通过 stdin 驱动 `ego-browser nodejs` 并写入 `# executor:` 与 `# script:` 头字段）真实执行并记录 argv、HEAD、tree、时间和退出码；Node.js `<22` 在目标命令启动前失败，头部记录真实 `# node:` 版本。头部另记录 challenge 的 `nonce`、`round`、`snapshotHash`，无对应上下文时写 `none`；普通命令没有审查轴语义，`axis` 与 `dispatchedAt` 不伪造。尾部记录 `terminalState`、`errorClass`、`durationMs`（本命令从 started 到 finished 的实际墙钟毫秒数）与 `repairAndWaitMs`（继承 challenge 中本轮修复与审查等待毫秒数，无该上下文时为 0，不与命令耗时混算），新旧日志均可由 `parseRunLog()` 读取。日志位于特性 `evidence/` 且不可覆盖，失败或旧证据需换新标签。qa-run 自身错误统一以 `[qa-run][ERROR]` 写入 stderr，被测命令输出不加此前缀；调用方必须检查本次命令退出状态，不得用旧日志末尾代替本次结果。日志里的 `tree` 是**行为证据树**：只忽略根 `GLOSSARY.md`、`CONTEXT.md`、各目录 `README.md`、`docs/adr/` 与 `docs/features/` 中的 Markdown；其他 Markdown 默认计入，尤其保留源码旁由业务、构建或测试运行时读取的内容。豁免路径不得作为运行时内容源，且仍进入审查包 diff。
 
 ### dev-port.mjs 探活
 
@@ -97,7 +97,7 @@ pnpm infra:logs
 
 ### qa-spec-review.mjs
 
-Schema 4 的 Spec 审查覆盖清单与原文校验共享纯函数模块：`specReviewChecklistDocument()` 序列化与解析 `_qa/spec-review-checklist.json`（支持 `v1` 五列与 `v2` 四列 `required` 必审分级），`specReviewSkeletonDocument()` 生成预填骨架 `_qa/spec-review-skeleton.md`，`parseSpecReviewCoverage()` 解析 `## 对账覆盖` 表格，`citationIsValid()` 与 `validateReviewReportForSeal()` 统一承载 `±5` 行谓词引用及封存前同步校验，由 `qa-check.mjs` 与 `review-package.mjs` 直接导入。
+Schema 4 的 Spec 审查覆盖清单与原文校验共享纯函数模块：`specReviewChecklistDocument()` 序列化与解析 `_qa/spec-review-checklist.json`（支持 `v1` 五列与 `v2` 四列 `required` 必审分级），`specReviewSkeletonDocument()` 生成预填骨架 `_qa/spec-review-skeleton.md`（同一单元按 changed 拆行），`parseSpecReviewCoverage()` 解析 `## 对账覆盖` 表格，`parseFindingDefinitions()` 只登记标题主编号与历史行首方括号，`parseFindingResponses()` 另兼容只用于复审的方括号编号引用，`citationIsValid()` 与 `validateReviewReportForSeal()` 统一承载 `±5` 行谓词引用及封存前同步校验，由 `qa-check.mjs` 与 `review-package.mjs` 直接导入。
 
 ### qa-preflight.mjs
 

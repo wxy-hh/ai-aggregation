@@ -1150,3 +1150,39 @@ test('[v2.2-P2-TC10-4] 截图与预检的权威文档和模块注释保持同义
   assert.match(helper, /assertNoRateLimit\(\)/);
   assert.match(readme, /`durationMs`/);
 });
+
+test('TC07-1 核心脚本与安装模板保持逐字节一致', async () => {
+  const names = ['qa-spec-review.mjs', 'review-package.mjs', 'qa-run.mjs', 'qa-check/review-triage.mjs'];
+  for (const name of names) {
+    const [tool, template] = await Promise.all([
+      read(`tooling/scripts/${name}`),
+      read(`.claude/skills/setup-qa-workflow/templates/${name}`),
+    ]);
+    assert.equal(template, tool, name);
+    for (const match of template.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      assert.ok(match[1].startsWith('node:') || match[1].startsWith('.'), `${name} 引入外部依赖 ${match[1]}`);
+    }
+  }
+});
+
+test('TC07-2 审查格式错误处理与 startedAt 指引同步', async () => {
+  const [review, customizations, workflow, workflowTemplate, guide, readme] = await Promise.all([
+    read('.claude/skills/code-review/SKILL.md'),
+    read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md'),
+    read('docs/agents/qa-workflow.md'),
+    read('.claude/skills/setup-qa-workflow/templates/qa-workflow.md'),
+    read('docs/agents/qa-workflow-guide.md'),
+    read('tooling/scripts/README.md'),
+  ]);
+  for (const content of [review, customizations]) {
+    assert.match(content, /## S-H1/);
+    assert.match(content, /## \[S-H1\]/);
+    assert.match(content, /方括号编号引用/);
+  }
+  for (const content of [workflow, workflowTemplate, guide]) {
+    assert.match(content, /\[qa-run\]\[ERROR\]/);
+    assert.match(content, /本次.*退出状态/);
+  }
+  assert.match(guide, /旧日志/);
+  assert.match(readme, /startedAt[\s\S]*不冒称模型真实派发、开始工作或推理时长/);
+});

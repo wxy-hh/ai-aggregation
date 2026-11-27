@@ -112,7 +112,7 @@ QA Review Coverage: 2
 
 - 已有 `_qa/scope.json` 时不再 init；没有时在改第一行代码前 init。需要扩大范围时运行 `node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>`。
 - 单文件测试使用 `pnpm --filter @repo/web test "<相对 apps/web 的路径>"`；含 `[id]` 的路径必须加引号。
-- 每个垂直切片遵循 TDD 红绿循环；写码前先用 qa-run 落盘见证断言失败的红灯（推荐标签 `red-<切片或工单>`），绿灯不可替代；隔离 worktree 中的红绿日志合并前复制回主工作区。命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（过程脚本可用 `--script <path>`，ego-browser 脚本优先用 `--executor ego-browser --script <path>` 淘汰双文件包装），同名不可覆盖；同 argv、同 tree、exit 0 日志可复用。进入阶段 5 前必须完成一次 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 并清除 ERROR；WARN 须逐项核对，不替代语义复核。
+- 每个垂直切片遵循 TDD 红绿循环；写码前先用 qa-run 落盘见证断言失败的红灯（推荐标签 `red-<切片或工单>`），绿灯不可替代；隔离 worktree 中的红绿日志合并前复制回主工作区。命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（过程脚本可用 `--script <path>`，ego-browser 脚本优先用 `--executor ego-browser --script <path>` 淘汰双文件包装），同名不可覆盖；同 argv、同 tree、exit 0 日志可复用。qa-run 自身错误统一带 `[qa-run][ERROR]` 前缀；必须检查本次命令退出状态，禁止用管道过滤后只读旧日志 exit 代替本次结果。进入阶段 5 前必须完成一次 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 并清除 ERROR；WARN 须逐项核对，不替代语义复核。
 - unit/integration 的 PASS 行在「绑定」列写 `` `<测试文件>` › <用例标题> ``（文件相对仓库根，标题取源码叶子标题，参数化按源码字面写法）；绑定写错只改执行记录，不重跑。
 
 ### 4. 真实验收（阶段 5）
@@ -142,7 +142,7 @@ QA Review Coverage: 2
    - **封存与三类错误路由**：有 challenge 时子代理基于当轮不可变快照自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`（拦截无编号、编号撞号 `FINDING_ID_COLLISION`、漏复核、对账或 `±5` 行谓词缺口），返回 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`。错误只分三类：**`REVIEWER_EDITABLE`**（行号/表格错，同轮最多重试 **1 次** `seal`）、**`PACKAGE_INVALID`**（候选/快照/失鲜包错，审查者立刻停交主代理重建包）、**`INFRA_UNAVAILABLE`**（429/配额/宿主失败，立刻停交用户，禁换模型禁重派）。
    - **Spec 对账**：`Coverage: 1` 五列逐项复制；`Coverage: 2` 四列基于按脚本/测试分组的 `reviewUnits` 响应必审/失效单元并写 `## 抽检范围`（未实质改动源码的存量回归机检+抽检，安全/权限/计费/`changed`/非 PASS 永不降级，`r2+` 同哈希自动继承且支持回查全量快照基线）；全版本命中 `±5` 行测试/断言谓词（封堵 `:1`）并归一化路径，变更项判 `变更成立`/`变更不成立`。
    - **单轴复用与隔离**：`r1` 双轴齐全；`r2` 审查包 `treeDigest` 未变且仅修改分流或轨迹文字时只需有待复核编号的轴产出原文，另一轴沿用同一 `treeDigest` 旧轮次（执行记录、绑定、日志或截图变化时 Spec 轴必须复审，过程脚本变化时 Standards 与 Spec 双轴必须复审）；审查子代理只读静态核对，不重跑测试套件、`typecheck`、`lint` 或启动服务，不得读取同轮另一轴原文，也不得跨特性读取其他 `.scratch/` 目录；子代理报超时或 `no_final_message` 时，先核对磁盘原文与 `.source.json` 是否已匹配当前 nonce 与哈希，齐全一致即认领。
-3. **编号含义**：Standards `[S-H<n>]`（可用性/无障碍/明文禁令与真实行为/生命周期/竞态缺陷）、`[S-J<n>]`（视觉配方与可维护性建议，不做前缀机器硬锁）；Spec `[P-M<n>]`（缺失/部分实现）、`[P-W<n>]`（实现有误）、`[P-X<n>]`（范围蔓延）；无发现写「无发现」，不带编号。跨轮同编号复用不同语义报 `FINDING_ID_COLLISION`。
+3. **编号含义**：Standards `[S-H<n>]`（可用性/无障碍/明文禁令与真实行为/生命周期/竞态缺陷）、`[S-J<n>]`（视觉配方与可维护性建议，不做前缀机器硬锁）；Spec `[P-M<n>]`（缺失/部分实现）、`[P-W<n>]`（实现有误）、`[P-X<n>]`（范围蔓延）；无发现写「无发现」，不带编号。跨轮同编号复用不同语义报 `FINDING_ID_COLLISION`。新发现优先用 `## S-H1` 或 `## [S-H1]` 这类标题主编号，历史行首方括号继续兼容；标题中段和正文引用不登记，方括号编号引用仅可作为复审响应，无方括号正文提及不算响应。
 4. **三档分流与自动骨架**：两轴落盘后可用 `node tooling/scripts/review-package.mjs scaffold-report .scratch/<feature>` 自动预生成无漏项 `review-report.md` 骨架（含 `审查方式：宿主=<宿主名>；`、`## 三档分流`、`## 默认驳回`、`## 修复尝试记录`、`## 范围说明`）。先分流再修，真实阻断与可维护性 `S-J` 分批不捆绑；分流表是唯一流程状态源，不改写 `review/` 原文。
    - `S-H`、`P-M`、`P-W` 默认本次修，改档须写理由，驳回引用 ADR 或契约。
    - S-J 默认驳回且不必进表（进 `## 默认驳回` 列编号与原文位置，不强制逐条理由）；确需修、转专项或单列风险才进表，仅在只动已触及范围及配套测试且不扩行为时改为本次修。

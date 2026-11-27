@@ -17,14 +17,12 @@ import { devNull } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  FINDING_ID_PATTERN,
-  NO_FINDING_AFTER_ID,
-  PLACEHOLDER_ID_EXAMPLE,
   REREVIEW_STATUS_PATTERN,
   SPEC_REVIEW_CHECKLIST_FILE,
   SPEC_REVIEW_CHECKLIST_V2,
   SPEC_REVIEW_SKELETON_FILE,
   hasPredicateInText,
+  parseFindingDefinitions,
   parseSpecReviewChecklist,
   parseSpecReviewCoverage,
   splitMarkdownRow,
@@ -329,29 +327,24 @@ export async function scanHistoricalFindingIds(featureDir, { upToRound = null } 
   const maxByPrefix = Object.fromEntries(FINDING_PREFIXES.map((prefix) => [prefix, 0]));
   for (const file of roundFiles) {
     const text = await readFile(path.join(featureDir, file.relative), 'utf8').catch(() => '');
-    const lines = text.split(/\r?\n/);
-    lines.forEach((line, lineIndex) => {
-      for (const match of line.matchAll(FINDING_ID_PATTERN)) {
-        const id = match[1];
-        const tail = line.slice(match.index + match[0].length);
-        if (NO_FINDING_AFTER_ID.test(tail) || PLACEHOLDER_ID_EXAMPLE.test(tail)) continue;
-        const prefixMatch = id.match(/^(S-[HJ]|P-[MWX])(\d+)$/);
-        if (prefixMatch) {
-          maxByPrefix[prefixMatch[1]] = Math.max(maxByPrefix[prefixMatch[1]] ?? 0, Number(prefixMatch[2]));
-        }
-        const entry = {
-          round: file.round,
-          axis: file.axis,
-          location: `${file.relative}:${lineIndex + 1}`,
-          line: line.trim(),
-        };
-        if (!records.has(id)) {
-          records.set(id, { id, firstRound: file.round, axis: file.axis, firstLine: entry.line, occurrences: [entry] });
-        } else {
-          records.get(id).occurrences.push(entry);
-        }
+    for (const finding of parseFindingDefinitions(text)) {
+      const { id, line, lineIndex } = finding;
+      const prefixMatch = id.match(/^(S-[HJ]|P-[MWX])(\d+)$/);
+      if (prefixMatch) {
+        maxByPrefix[prefixMatch[1]] = Math.max(maxByPrefix[prefixMatch[1]] ?? 0, Number(prefixMatch[2]));
       }
-    });
+      const entry = {
+        round: file.round,
+        axis: file.axis,
+        location: `${file.relative}:${lineIndex + 1}`,
+        line,
+      };
+      if (!records.has(id)) {
+        records.set(id, { id, firstRound: file.round, axis: file.axis, firstLine: entry.line, occurrences: [entry] });
+      } else {
+        records.get(id).occurrences.push(entry);
+      }
+    }
   }
   const nextIds = Object.fromEntries(FINDING_PREFIXES.map((prefix) => [prefix, `${prefix}${(maxByPrefix[prefix] ?? 0) + 1}`]));
   return {
@@ -388,9 +381,11 @@ async function writeAxisMetrics(feature, challenge, manifest, axis, values, revi
 }
 
 async function recordSealFailure(feature, args, error) {
+  let flags;
   let axis;
   try {
-    axis = parseSealFlags(args).axis;
+    flags = parseSealFlags(args);
+    axis = flags.axis;
   } catch {
     return;
   }
@@ -400,6 +395,11 @@ async function recordSealFailure(feature, args, error) {
     readFile(path.join(feature, QA_DIR, 'review-package.json'), 'utf8').then(JSON.parse, () => null),
   ]);
   if (!challenge || !manifest) return;
+  if (challenge.axes?.[axis]?.terminalState === 'returned') return;
+  const round = normalizeRound(flags.round);
+  const fileName = `r${round.slice(1)}-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
+  const receipt = path.join(feature, REVIEW_DIR, fileName.replace(/\.md$/, RECEIPT_SUFFIX));
+  if (await fileExists(receipt)) return;
   const completedAt = new Date().toISOString();
   await writeAxisMetrics(feature, challenge, manifest, axis, {
     startedAt: challenge.axes?.[axis]?.startedAt ?? completedAt,
@@ -462,14 +462,6 @@ async function sealReview(repo, argument, args) {
     throw typedError('PACKAGE_INVALID', 'challenge 的 packagedAt 与当前审查包不一致；请重新 collect');
   }
 
-  const startedAt = new Date().toISOString();
-  const attempt = await writeAxisMetrics(feature, challenge, manifest, axis, {
-    startedAt: challenge.axes?.[axis]?.startedAt ?? startedAt,
-    terminalState: 'sealing',
-    errorClass: null,
-    sealAttempts: (challenge.axes?.[axis]?.sealAttempts ?? 0) + 1,
-  });
-
   const receiptPath = `${REVIEW_DIR}/${fileName.replace(/\.md$/, RECEIPT_SUFFIX)}`;
   const absoluteReceipt = path.join(feature, receiptPath);
   if (await fileExists(absoluteReceipt)) {
@@ -477,6 +469,14 @@ async function sealReview(repo, argument, args) {
     const nonceNote = existing?.nonce && existing.nonce !== challenge.nonce ? '，且 nonce 与当前 challenge 不一致' : '';
     throw typedError('PACKAGE_INVALID', `凭据已存在：${receiptPath}${nonceNote}；seal 拒绝覆盖，需要修正请按新轮次重新审查`);
   }
+
+  const startedAt = new Date().toISOString();
+  const attempt = await writeAxisMetrics(feature, challenge, manifest, axis, {
+    startedAt: challenge.axes?.[axis]?.startedAt ?? startedAt,
+    terminalState: 'sealing',
+    errorClass: null,
+    sealAttempts: (challenge.axes?.[axis]?.sealAttempts ?? 0) + 1,
+  });
 
   const content = await readFile(report);
   const markdownText = content.toString('utf8');
@@ -486,14 +486,9 @@ async function sealReview(repo, argument, args) {
   // 检查跨轮次编号碰撞：历史轮次已登记的编号不能在后续轮次作为新发现重新起号
   const historical = await scanHistoricalFindingIds(feature, { upToRound: roundNum });
   const collisions = [];
-  for (const line of markdownText.split(/\r?\n/)) {
-    for (const match of line.matchAll(FINDING_ID_PATTERN)) {
-      const id = match[1];
-      const tail = line.slice(match.index + match[0].length);
-      if (NO_FINDING_AFTER_ID.test(tail) || PLACEHOLDER_ID_EXAMPLE.test(tail)) continue;
-      if (historical.records.has(id) && !REREVIEW_STATUS_PATTERN.test(line)) {
-        collisions.push(`${id}（首次出现于 r${historical.records.get(id).firstRound}）`);
-      }
+  for (const finding of parseFindingDefinitions(markdownText)) {
+    if (historical.records.has(finding.id) && !REREVIEW_STATUS_PATTERN.test(finding.line)) {
+      collisions.push(`${finding.id}（首次出现于 r${historical.records.get(finding.id).firstRound}）`);
     }
   }
   if (collisions.length) {

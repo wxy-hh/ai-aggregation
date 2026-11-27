@@ -3,11 +3,10 @@ import path from 'node:path';
 import { emptyEvidenceReason, formatCommand, parseRunLog, splitShellWords } from '../qa-run.mjs';
 import { QA_DIR, computeQaArtifactsDigest, inScope, sha256, sha256FileOrNull } from '../review-package.mjs';
 import {
-  FINDING_ID_PATTERN,
-  NO_FINDING_AFTER_ID,
-  PLACEHOLDER_ID_EXAMPLE,
   REREVIEW_STATUS_PATTERN,
   hasNoFinding,
+  parseFindingDefinitions,
+  parseFindingResponses,
   rawHasFindingOrNoFinding,
   splitMarkdownRow,
 } from '../qa-spec-review.mjs';
@@ -143,20 +142,16 @@ async function rawIndex(featureDir, rounds) {
   const collisions = [];
   for (const round of [...rounds.keys()].sort((a, b) => a - b)) {
     for (const { relative, text } of await roundRaws(featureDir, rounds.get(round))) {
-      text.split(/\r?\n/).forEach((line, lineIndex) => {
-        for (const match of line.matchAll(FINDING_ID_PATTERN)) {
-          const tail = line.slice(match.index + match[0].length);
-          if (NO_FINDING_AFTER_ID.test(tail) || PLACEHOLDER_ID_EXAMPLE.test(tail)) continue;
-          const id = match[1];
-          const location = `${relative}:${lineIndex + 1}`;
-          if (!firstRoundById.has(id)) {
-            firstRoundById.set(id, { round, location });
-          } else if (round > firstRoundById.get(id).round && !REREVIEW_STATUS_PATTERN.test(line)) {
-            collisions.push({ id, firstRound: firstRoundById.get(id).round, round, location });
-          }
-          last.set(id, { location, line: line.trim() });
+      for (const finding of parseFindingDefinitions(text)) {
+        const id = finding.id;
+        const location = `${relative}:${finding.lineIndex + 1}`;
+        if (!firstRoundById.has(id)) {
+          firstRoundById.set(id, { round, location });
+        } else if (round > firstRoundById.get(id).round && !REREVIEW_STATUS_PATTERN.test(finding.line)) {
+          collisions.push({ id, firstRound: firstRoundById.get(id).round, round, location });
         }
-      });
+        last.set(id, { location, line: finding.line });
+      }
     }
   }
   return { last, collisions };
@@ -189,7 +184,8 @@ async function rereviewMissing(featureDir, rounds, index, rows) {
     }
     const relative = rounds.get(next)[axisOf(row.id)];
     const text = relative ? await readFile(path.join(featureDir, relative), 'utf8') : '';
-    if (!text.includes(`[${row.id}]`)) missing.push(`${row.id}（r${next} ${axisOf(row.id) === 'standards' ? 'Standards' : 'Spec'} 原文未出现）`);
+    const responseIds = new Set(parseFindingResponses(text).map((finding) => finding.id));
+    if (!responseIds.has(row.id)) missing.push(`${row.id}（r${next} ${axisOf(row.id) === 'standards' ? 'Standards' : 'Spec'} 原文未出现）`);
   }
   return missing;
 }

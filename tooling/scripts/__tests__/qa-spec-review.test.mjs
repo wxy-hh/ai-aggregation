@@ -6,10 +6,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkFeature, formatReport } from '../qa-check.mjs';
+import { scanHistoricalFindingIds } from '../review-package.mjs';
 import {
+  hasNoFinding,
+  parseFindingDefinitions,
   parseSpecReviewChecklist,
   parseSpecReviewCoverage,
+  rawHasFindingOrNoFinding,
   specReviewChecklistDocument,
+  specReviewSkeletonDocument,
 } from '../qa-spec-review.mjs';
 
 const QA_RUN = fileURLToPath(new URL('../qa-run.mjs', import.meta.url));
@@ -24,6 +29,24 @@ function codes(report) {
 
 function writeDeep(file, content) {
   return mkdir(path.dirname(file), { recursive: true }).then(() => writeFile(file, content));
+}
+
+async function r1FindingFixture(t) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-finding-r1-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const feature = path.join(dir, '.scratch', 'feature');
+  const standards = [
+    ...Array.from({ length: 6 }, (_, index) => `## S-H${index + 1}：硬违规 ${index + 1}`),
+    ...Array.from({ length: 11 }, (_, index) => `## S-J${index + 1}：判断建议 ${index + 1}`),
+  ].join('\n\n');
+  const spec = [
+    ...Array.from({ length: 4 }, (_, index) => `## [P-M${index + 1}] 缺失 ${index + 1}`),
+    ...Array.from({ length: 2 }, (_, index) => `## [P-W${index + 1}] 错误 ${index + 1}`),
+    '## [P-X1] 范围蔓延',
+  ].join('\n\n');
+  await writeDeep(path.join(feature, 'review', 'r1-standards.md'), `${standards}\n`);
+  await writeDeep(path.join(feature, 'review', 'r1-spec-axis.md'), `${spec}\n`);
+  return feature;
 }
 
 function git(cwd, args) {
@@ -62,6 +85,38 @@ function planText({ seam = 'unit', status = 'PASS', assertion = '第一条断言
   ].join('\n');
 }
 
+function mixedPlanText(phase) {
+  const current = phase === 'current';
+  const status = current ? 'PASS' : 'BLOCKED';
+  const assertions = ['第一条断言', current ? '修改后的第二条断言' : '第二条断言', '第三条断言'];
+  return [
+    'QA Schema: 4',
+    'QA Mode: inline',
+    'QA Review Coverage: 2',
+    '',
+    '### TC01: 混合计划变更',
+    '- Priority: P1',
+    '- Covers: 1',
+    '- Seam: unit',
+    '',
+    '#### 验证断言',
+    ...assertions.map((assertion, index) => `${index + 1}. ${assertion}`),
+    '',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...assertions.map((_, index) => `| TC01 | ${index + 1} | ${status} | ${current ? '`evidence/run.log`' : '尚未执行'} | ${current ? BINDING : ''} | |`),
+    '',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `node --version` | `evidence/delivery.log` |',
+    '',
+    '## 计划变更',
+    current ? '- TC01：根据已核实契约只校正第二条断言' : '- 无',
+  ].join('\n');
+}
+
 const SPEC = '## User Stories\n1. 第一条需求\n\n## 交付命令\n\n```bash\nnode --version\n```\n';
 
 function escapeCell(value) {
@@ -92,7 +147,7 @@ function coverageMarkdown(checklist, overrides = {}) {
   ].join('\n');
 }
 
-async function newProtocolRepo(t, { seam = 'unit' } = {}) {
+async function newProtocolRepo(t, { seam = 'unit', planFactory = null, autoSeal = true } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'qa-spec-review-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   git(dir, ['init', '--quiet']);
@@ -112,13 +167,13 @@ async function newProtocolRepo(t, { seam = 'unit' } = {}) {
     "console.log('[TC01-1] PASS 实测：目标可见');",
   ].join('\n'));
   await writeFile(path.join(feature, 'spec.md'), SPEC);
-  await writeFile(path.join(feature, 'qa-plan.md'), planText({ seam, status: 'BLOCKED' }));
+  await writeFile(path.join(feature, 'qa-plan.md'), planFactory ? planFactory('initial') : planText({ seam, status: 'BLOCKED' }));
   let result = spawnSync(process.execPath, [QA_RUN, feature, 'gate-plan-initial', '--', process.execPath, QA_CHECK, 'plan', feature], { cwd: dir, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   result = spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt'], { cwd: dir, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 
-  await writeFile(path.join(feature, 'qa-plan.md'), planText({ seam }));
+  await writeFile(path.join(feature, 'qa-plan.md'), planFactory ? planFactory('current') : planText({ seam }));
   if (seam === 'browser') await writeDeep(path.join(feature, 'screenshots', 'target.png'), '目标截图');
   const runArgv = seam === 'browser' ? [process.execPath, '.scratch/feature/scripts/browser.mjs'] : [process.execPath, '--test', TEST_FILE];
   result = spawnSync(process.execPath, [QA_RUN, feature, 'run', '--', ...runArgv], { cwd: dir, encoding: 'utf8' });
@@ -131,15 +186,17 @@ async function newProtocolRepo(t, { seam = 'unit' } = {}) {
   assert.equal(result.status, 0, result.stderr);
 
   const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
-  await writeDeep(path.join(feature, 'review-report.md'), '审查方式：宿主=Kimi Code；两轴独立子代理\n\n## 三档分流\n\n无发现\n');
-  await writeDeep(path.join(feature, 'review/r1-standards.md'), '无发现\n');
-  await writeDeep(path.join(feature, 'review/r1-spec-axis.md'), coverageMarkdown(checklist));
-  for (const [axis, file] of [['standards', 'review/r1-standards.md'], ['spec', 'review/r1-spec-axis.md']]) {
-    result = spawnSync(process.execPath, [
-      REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', axis, '--file', file,
-      '--reviewer-kind', 'subagent', '--host', 'Kimi Code',
-    ], { cwd: dir, encoding: 'utf8' });
-    assert.equal(result.status, 0, result.stderr);
+  if (autoSeal) {
+    await writeDeep(path.join(feature, 'review-report.md'), '审查方式：宿主=Kimi Code；两轴独立子代理\n\n## 三档分流\n\n无发现\n');
+    await writeDeep(path.join(feature, 'review/r1-standards.md'), '无发现\n');
+    await writeDeep(path.join(feature, 'review/r1-spec-axis.md'), coverageMarkdown(checklist));
+    for (const [axis, file] of [['standards', 'review/r1-standards.md'], ['spec', 'review/r1-spec-axis.md']]) {
+      result = spawnSync(process.execPath, [
+        REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', axis, '--file', file,
+        '--reviewer-kind', 'subagent', '--host', 'Kimi Code',
+      ], { cwd: dir, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+    }
   }
   return { dir, feature, checklist };
 }
@@ -521,4 +578,138 @@ test('亲自复审补强：NO_FINDING_AFTER_ID 变体、非零退出码谓词与
     `${coverageBody}\n\n## 抽检范围\n- 已抽检 \`tests/opt.test.mjs\`：断言常规用例存在，无发现。\n`,
   );
   assert.deepEqual(filledHeading, []);
+});
+
+test('TC01-1 r1 脱敏原文登记二十四条 FindingId', async (t) => {
+  const feature = await r1FindingFixture(t);
+  const historical = await scanHistoricalFindingIds(feature, { upToRound: 2 });
+  assert.equal(historical.allIds.length, 24);
+});
+
+test('TC01-2 Standards 的两种标题形式共登记十七条', async (t) => {
+  const feature = await r1FindingFixture(t);
+  const historical = await scanHistoricalFindingIds(feature, { upToRound: 2 });
+  assert.equal(historical.allIds.filter((id) => id.startsWith('S-')).length, 17);
+  assert.ok(historical.records.get('S-H1').firstLine.startsWith('## S-H1'));
+  assert.ok(historical.records.get('P-M1').firstLine.startsWith('## [P-M1]'));
+});
+
+test('TC01-3 r2 下一编号接续全部五个前缀', async (t) => {
+  const feature = await r1FindingFixture(t);
+  const historical = await scanHistoricalFindingIds(feature, { upToRound: 2 });
+  assert.deepEqual(historical.nextIds, {
+    'S-H': 'S-H7',
+    'S-J': 'S-J12',
+    'P-M': 'P-M5',
+    'P-W': 'P-W3',
+    'P-X': 'P-X2',
+  });
+});
+
+test('TC01-4 历史行首方括号定义保持兼容', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-finding-legacy-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const feature = path.join(dir, '.scratch', 'feature');
+  await writeDeep(path.join(feature, 'review', 'r1-standards.md'), '[S-H3] 已修\n[S-J2] 判断建议\n');
+  await writeDeep(path.join(feature, 'review', 'r1-spec-axis.md'), '[P-M4] 缺失\n');
+  const historical = await scanHistoricalFindingIds(feature, { upToRound: 2 });
+  assert.deepEqual(historical.allIds.sort(), ['P-M4', 'S-H3', 'S-J2']);
+  assert.equal(historical.nextIds['S-H'], 'S-H4');
+  assert.equal(historical.nextIds['S-J'], 'S-J3');
+  assert.equal(historical.nextIds['P-M'], 'P-M5');
+});
+
+test('TC02-1 五类非定义位置均不登记 FindingId', () => {
+  const samples = [
+    '## 核对 [S-H1] 的标题中段',
+    '正文引用 [S-H1] 与 S-H2，不应登记。',
+    '  - [S-H1] 缩进列表引用',
+    '| [S-H1] | 表格单元格引用 |',
+    '## [S-H1] 编号示例，仅作格式说明',
+  ];
+  for (const sample of samples) assert.equal(parseFindingDefinitions(sample).length, 0, sample);
+});
+
+test('TC02-2 局部无发现部分不吞掉真实发现', () => {
+  const markdown = '## [S-H1] 真实缺陷\n\n## 实际核对范围（无发现部分）\n';
+  assert.equal(parseFindingDefinitions(markdown).length, 1);
+  assert.equal(hasNoFinding(markdown), false);
+  assert.equal(rawHasFindingOrNoFinding(markdown), true);
+});
+
+test('TC02-3 零发现原文接受两种整局声明', () => {
+  const samples = [
+    '无发现\n',
+    '## 无新增审查发现\n',
+    '无发现。\n',
+    '无新增审查发现。\n',
+    '本轮无新增审查发现。\n',
+    '本次审查无发现。\n',
+    '本次审查：无发现\n',
+    '本次审查：无发现。\n',
+    '> 无发现\n',
+    '> 无发现。\n',
+    '- [P-W4] 仅作后续编号示例，不对应实际缺陷；本次审查无新发现\n',
+  ];
+  for (const markdown of samples) {
+    assert.equal(hasNoFinding(markdown), true, markdown);
+    assert.equal(rawHasFindingOrNoFinding(markdown), true, markdown);
+  }
+});
+
+test('TC02-4 局部或带例外的声明不算整局无发现', () => {
+  const samples = [
+    '## 实际核对范围（无发现部分）\n',
+    '## 无新增审查发现（除 S-H7 / S-H8 / S-H9 外）\n',
+    '> 实际核对范围（无发现部分）\n',
+    '本次审查无发现（部分）。\n',
+    '- [P-W4] 仅作后续编号示例，不对应实际缺陷；本次审查无新增审查发现（除 S-H1 外）\n',
+  ];
+  for (const markdown of samples) {
+    assert.equal(hasNoFinding(markdown), false, markdown);
+    assert.equal(rawHasFindingOrNoFinding(markdown), false, markdown);
+  }
+});
+
+test('TC03-1 混合变更单元按 changed 拆行并分别预填', () => {
+  const skeleton = specReviewSkeletonDocument({
+    version: 2,
+    rows: [
+      { id: 'TC03-1', changed: false, sourceCandidates: ['tests/mixed.test.mjs'] },
+      { id: 'TC03-2', changed: true, sourceCandidates: ['tests/mixed.test.mjs'] },
+      { id: 'TC03-3', changed: false, sourceCandidates: ['tests/mixed.test.mjs'] },
+    ],
+    reviewUnits: [{
+      unitId: 'mixed-unit',
+      rowIds: ['TC03-1', 'TC03-2', 'TC03-3'],
+      sourceCandidates: ['tests/mixed.test.mjs'],
+      verificationStatus: 'required',
+    }],
+  });
+  const rows = skeleton.split(/\r?\n/).filter((line) => line.startsWith('| TC03-'));
+  assert.equal(rows.length, 2);
+  const unchanged = rows.find((line) => line.includes('TC03-1'));
+  const changed = rows.find((line) => line.includes('TC03-2'));
+  assert.ok(unchanged.includes('TC03-3') && !unchanged.includes('TC03-2'));
+  assert.ok(unchanged.endsWith('不适用 |'));
+  assert.ok(!changed.includes('TC03-1') && !changed.includes('TC03-3'));
+  assert.ok(changed.endsWith('待判（变更成立/变更不成立） |'));
+});
+
+test('TC03-2 混合变更骨架真实首次 seal 成功', async (t) => {
+  const { dir, feature } = await newProtocolRepo(t, { planFactory: mixedPlanText, autoSeal: false });
+  const skeleton = await readFile(path.join(feature, '_qa/spec-review-skeleton.md'), 'utf8');
+  const markdown = `无新增审查发现\n\n${skeleton}`
+    .replaceAll('待判（已核实/未核实）', '已核实')
+    .replaceAll('`tests/a.test.mjs:<行号>` 待核对真实谓词', '`tests/a.test.mjs:2` 核对真实叶子谓词')
+    .replaceAll('待判（变更成立/变更不成立）', '变更成立');
+  await writeDeep(path.join(feature, 'review', 'r1-spec-axis.md'), markdown);
+  const result = spawnSync(process.execPath, [
+    REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', 'spec', '--file', 'review/r1-spec-axis.md',
+    '--reviewer-kind', 'subagent', '--host', 'Kimi Code',
+  ], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.doesNotMatch(result.stderr, /SPEC_PLAN_CHANGE_REVIEW_MISSING/);
+  const challenge = JSON.parse(await readFile(path.join(feature, '_qa/review-challenge.json'), 'utf8'));
+  assert.equal(challenge.axes.spec.sealAttempts, 1);
 });

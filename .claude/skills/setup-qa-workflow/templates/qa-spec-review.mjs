@@ -11,6 +11,14 @@ export const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
 export const HAS_FINDING_ID = new RegExp(FINDING_ID_PATTERN.source);
 export const NO_FINDING_AFTER_ID = /^(?:\*\*|`)?\s*[:：]?\s*无(?:新增|新)?(?:审查)?(?:发现|编号)/;
 export const PLACEHOLDER_ID_EXAMPLE = /(?:仅作|后续)?(?:真实缺陷的)?编号示例/;
+const FINDING_DEFINITION_PATTERNS = [
+  /^\s{0,3}#{1,6}\s+(?:\*\*)?\[((?:S-[HJ]|P-[MWX])\d+)\](?:\*\*)?(?=\s|[:：—–-]|$)/,
+  /^\s{0,3}#{1,6}\s+(?:\*\*)?((?:S-[HJ]|P-[MWX])\d+)(?:\*\*)?(?=\s|[:：—–-]|$)/,
+  /^(?:\*\*)?\[((?:S-[HJ]|P-[MWX])\d+)\](?:\*\*)?(?=\s|[:：—–-]|$)/,
+];
+const NO_FINDING_PREFIX_SOURCE = '(?:本轮|本次审查)';
+const NO_FINDING_CORE = new RegExp(`^(?:${NO_FINDING_PREFIX_SOURCE})?无(?:新增|新)?(?:审查)?(?:发现|编号)$`);
+const PLACEHOLDER_NO_FINDING = new RegExp(`${NO_FINDING_PREFIX_SOURCE}无(?:新增|新)?(?:审查)?(?:发现|编号)[。．]?\\s*$`);
 
 const COVERAGE_HEADING = /^## 对账覆盖\s*$/;
 const CASE_ASSERTION_ID = /^TC\d+-\d+$/;
@@ -30,14 +38,62 @@ export function hasPredicateInText(text) {
   return false;
 }
 
+/** 只提取标题主编号与历史行首方括号定义，不把正文引用或示例登记为发现 */
+export function parseFindingDefinitions(markdown) {
+  const findings = [];
+  const lines = String(markdown ?? '').split(/\r?\n/);
+  for (const [lineIndex, line] of lines.entries()) {
+    for (const pattern of FINDING_DEFINITION_PATTERNS) {
+      const match = line.match(pattern);
+      if (!match) continue;
+      const tail = line.slice(match[0].length);
+      if (NO_FINDING_AFTER_ID.test(tail) || PLACEHOLDER_ID_EXAMPLE.test(tail)) break;
+      findings.push({ id: match[1], line: line.trim(), lineIndex, index: match.index, tail });
+      break;
+    }
+  }
+  return findings;
+}
+
+/** 复审响应兼容历史方括号引用，但不把这些引用用于新发现登记或撞号 */
+export function parseFindingResponses(markdown) {
+  const responses = parseFindingDefinitions(markdown);
+  const seen = new Set(responses.map((finding) => `${finding.lineIndex}:${finding.id}`));
+  for (const [lineIndex, line] of String(markdown ?? '').split(/\r?\n/).entries()) {
+    for (const match of line.matchAll(FINDING_ID_PATTERN)) {
+      if (seen.has(`${lineIndex}:${match[1]}`)) continue;
+      const tail = line.slice(match.index + match[0].length);
+      if (NO_FINDING_AFTER_ID.test(tail) || PLACEHOLDER_ID_EXAMPLE.test(tail)) continue;
+      responses.push({ id: match[1], line: line.trim(), lineIndex, index: match.index, tail });
+    }
+  }
+  return responses;
+}
+
+function isWholeNoFindingLine(line) {
+  const normalized = line.trim()
+    .replace(/^\s{0,3}#{1,6}\s+/, '')
+    .replace(/^(?:规范轴|需求轴|本次审查)[:：]\s*/, '')
+    .replace(/^[-*+]\s+/, '')
+    .replace(/^(?:\*\*|`|<|>)\s*/, '')
+    .replace(/(?:\*\*|`|>)[。．]?$/, '')
+    .replace(/[。．]$/, '');
+  return NO_FINDING_CORE.test(normalized);
+}
+
 /** 判断审查原文是否表达「无发现」及其常见中文否定变体 */
 export function hasNoFinding(text) {
-  return /无(?:新增|新)?(?:审查)?(?:发现|编号)/.test(String(text ?? ''));
+  if (parseFindingDefinitions(text).length > 0) return false;
+  return String(text ?? '').split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    return isWholeNoFindingLine(trimmed)
+      || (PLACEHOLDER_ID_EXAMPLE.test(trimmed) && PLACEHOLDER_NO_FINDING.test(trimmed));
+  });
 }
 
 /** 校验原文是否含规范编号或「无发现」语义 */
 export function rawHasFindingOrNoFinding(markdown) {
-  return HAS_FINDING_ID.test(markdown) || hasNoFinding(markdown);
+  return parseFindingResponses(markdown).length > 0 || hasNoFinding(markdown);
 }
 
 /** 根据编号前缀推断所属审查轴 */
@@ -102,7 +158,7 @@ export function specReviewChecklistDocument(
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
-/** 生成 v2 预填 Markdown 骨架，按 reviewUnits 合并必审单元并拆分抽检与继承项 */
+/** 生成 v2 预填 Markdown 骨架，按 reviewUnits 与 changed 分组必审行并拆分抽检与继承项 */
 export function specReviewSkeletonDocument(checklist) {
   const rowMap = new Map(checklist.rows.map((row) => [row.id, row]));
   const units = Array.isArray(checklist.reviewUnits) && checklist.reviewUnits.length ? checklist.reviewUnits : null;
@@ -130,14 +186,19 @@ export function specReviewSkeletonDocument(checklist) {
     '| --- | --- | --- | --- |',
   ];
   for (const unit of requiredUnits) {
-    const unitRows = unit.rowIds.map((id) => rowMap.get(id)).filter(Boolean);
-    const sourceCandidates = unit.sourceCandidates?.length
-      ? unit.sourceCandidates
-      : [...new Set(unitRows.flatMap((row) => row.sourceCandidates))];
-    const anyChanged = unitRows.some((row) => row.changed);
-    const sourceHint = sourceCandidates.length ? `\`${sourceCandidates[0]}:<行号>\` 待核对真实谓词` : '待填写源码位置与谓词摘要';
-    const changeHint = anyChanged ? '待判（变更成立/变更不成立）' : '不适用';
-    lines.push(`| ${unit.rowIds.join('、')} | 待判（已核实/未核实） | ${sourceHint} | ${changeHint} |`);
+    const groups = [
+      { changed: true, rowIds: unit.rowIds.filter((id) => rowMap.get(id)?.changed) },
+      { changed: false, rowIds: unit.rowIds.filter((id) => !rowMap.get(id)?.changed) },
+    ].filter((group) => group.rowIds.length > 0);
+    for (const group of groups) {
+      const unitRows = group.rowIds.map((id) => rowMap.get(id)).filter(Boolean);
+      const sourceCandidates = unit.sourceCandidates?.length
+        ? unit.sourceCandidates
+        : [...new Set(unitRows.flatMap((row) => row.sourceCandidates))];
+      const sourceHint = sourceCandidates.length ? `\`${sourceCandidates[0]}:<行号>\` 待核对真实谓词` : '待填写源码位置与谓词摘要';
+      const changeHint = group.changed ? '待判（变更成立/变更不成立）' : '不适用';
+      lines.push(`| ${group.rowIds.join('、')} | 待判（已核实/未核实） | ${sourceHint} | ${changeHint} |`);
+    }
   }
   if (optionalRows.length) {
     const files = [...new Set(optionalRows.flatMap((row) => row.sourceCandidates))];
@@ -494,8 +555,8 @@ export async function validateReviewReportForSeal({
     const owner = axisOfFinding(id);
     return owner === null || owner === axis;
   });
-  // 与 qa-check 统一使用带方括号字面匹配，既避免规则分叉，又杜绝用户输入直接拼接 RegExp
-  const missingPending = axisPendingIds.filter((id) => !markdown.includes(`[${id}]`));
+  const responseIds = new Set(parseFindingResponses(markdown).map((finding) => finding.id));
+  const missingPending = axisPendingIds.filter((id) => !responseIds.has(id));
   if (missingPending.length) {
     issues.push(makeIssue(
       'FINDING_NOT_REREVIEWED',
