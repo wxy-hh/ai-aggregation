@@ -1,20 +1,20 @@
 # QA 工作流优化记录
 
 > 生成时间：2026-11-05
-> 最近更新：2026-11-26（补齐 v2.2 Phase 1/2/2.5 全阶段提交与 Phase 3 干净会话双对照发布验收，关闭 `QA-WF-01` / `QA-WF-05` / `QA-WF-07`、摘除 `v2.2` 发布验收暂挂标注并已推送至 `origin/master_newjob`）
-> 范围：2026-10-08 ~ 2026-11-26 之间以 QA 工作流为主体的 37 次已提交主仓优化（均已合入并推送 `origin/master_newjob`）；另记录通用仓同步提交 `d1fc362`
+> 最近更新：2026-11-28（补录真实慢车道复盘驱动的步骤 1 确定性审查工具修复 `c92f860` 及干净会话 dogfood 发布验收，已本地提交、尚未推送远端）
+> 范围：2026-10-08 ~ 2026-11-28 之间以 QA 工作流为主体的 38 次已提交主仓优化（前 37 次已推送 `origin/master_newjob`，第 38 次本地已提交）；另记录通用仓同步提交 `d1fc362`
 > 数据来源：git 提交历史、提交说明、`docs/adr/` 决策记录、两仓测试与发布 lint；各次真实运行的复盘材料位于本机 `.scratch/`（不入库，见 `docs/agents/issue-tracker.md`）
 > 相关文件：正本 `docs/agents/qa-workflow.md`、参考书 `docs/agents/qa-workflow-guide.md`、检查器 `tooling/scripts/qa-check.mjs`（含 `tooling/scripts/qa-check/*.mjs` 六子模块）/ `qa-run.mjs` / `review-package.mjs` / `qa-spec-review.mjs` / `qa-preflight.mjs`、浏览器辅助 `tooling/scripts/qa-browser-helper.mjs`、基线统计 `docs/reports/qa-wf-02-baseline-2026-11-25.md`、契约测试 `tooling/scripts/__tests__/qa-workflow-contract.test.mjs`
 > 本轮审计与收敛修复的详细记录：`docs/reports/2026-11-18-qa-workflow-audit-remediation.md`、`docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`
 
 ## 概览
 
-截至 11-26，共 37 次已提交主仓优化（均已推送至 `origin/master_newjob`，不含通用仓同步提交）。三个核心产物的规模变化：
+截至 11-28，共 38 次已提交主仓优化（不含通用仓同步提交）。三个核心产物的规模变化：
 
-| 产物 | 起点 | 现状（11-26） |
+| 产物 | 起点 | 现状（11-28） |
 | --- | --- | --- |
 | 正本 `qa-workflow.md` | 86 行（初版） | 178 行（已于 Phase 1 `OPT-15` 解除 180 行硬锁，保持紧凑清晰） |
-| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 薄入口 173 行 + `tooling/scripts/qa-check/` 6 个无环子模块 3,278 行（共 3,451 行）；全量工具测试 `450/450` 全绿（0 失败 / 0 跳过） |
+| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 薄入口 173 行 + `tooling/scripts/qa-check/` 6 个无环子模块（工具回归测试 `470/470` 全绿，0 失败 / 0 跳过） |
 | QA 相关 ADR | 0 | 16 份：0023、0024、0026、0031、0033、0035、0040、0042、0043、0044、0047、0048、0054、0057、0065、0066 |
 
 每次大改动几乎都源自一次真实运行暴露的问题，而不是预先设计：agent-kb-loop 暴露了审查闭环漏洞（ADR-0033/0035），KB-CHAT-CITE 与知识库预览修复暴露了证据造假路径（ADR-0026），agent-hitl-action 暴露了流程成本倒挂（ADR-0042），一次外部评价暴露了车道与宿主缺口（ADR-0043/0044），四次真实需求复盘又暴露了审查来源、事件时间与正文编号语义边界（ADR-0047 及 ADR-0040 修订），四特性复盘基线驱动了 v2.1 预检前置与防线闭环（ADR-0065），而 `.scratch/tools-workbench-ia-migration/` 的真实 239.6 分钟阶段 6 翻车复盘最终驱动了 v2.2 不可变快照、增量继承、基础设施治本、六模块拆分与 Phase 3 干净会话双对照发布验收（ADR-0066）。本记录按十二个阶段逐次说明。
@@ -297,9 +297,18 @@
   - **对照 B（质量防线轨，`.scratch/profile-quick-nav-anchor`，原分支 `phase3/control-b`）**：零剧透植入 4 类历史高发变异（`M1` 移动锚点滚错宿主、`M2` 无语义按钮绑定、`M3` 空白 `VisualTarget` 截图、`M4` 减动效首读错误）。`r1` 独立双轴在无提示下 **`4/4` 全部阻断级独立检出**（`M1` `[S-H2]`/`[P-W5~6]`、`M2` `[P-W1~2]`、`M3` `[P-M1]`/`[P-W7]`、`M4` `[S-H1]`/`[P-W3~4]`），另捕获 2 条真实 `S-H`；`r2` 全修闭环并用 `ego-browser` 真实渲染 `390×844` 截图（`variance=559.4`），四次 `seal` 全部 `1` 次通过，`gate-review-01` `PASS`（86ms），全程活跃 **21.85 分钟**，零踩脏、未越界 `r2`。临时 worktree 已清理，原始审计证据归档至本机 `.scratch/qa-workflow-v2-2-phase3/control-b-archive/profile-quick-nav-anchor/`。
 - **收口状态**：经 5 项 `/grill-me` 终审锁定，正式关闭 `QA-WF-01`、`QA-WF-05`、`QA-WF-07`，全仓摘除 `v2.2` 发布验收暂挂标注，形成摘标提交 `12c3cce` 并与 `/tools` 业务合入提交 `7ff16f1` 一并推送至 `origin/master_newjob`。
 
+### 38. `c92f860` 真实慢车道复盘驱动的确定性审查工具修复（步骤 1）与发布 Dogfood（11-28）
+
+- **解决什么**：针对 `.scratch/eval-real-execution-honest-scoping/` 真实慢车道复盘暴露的四类确定性工具缺陷（见 `docs/reports/2026-11-27-qa-workflow-real-slow-lane-optimization.md` §4 步骤 1），在不立 `v2.3`、不改 Schema 4 的前提下一次性修清工具回归问题。
+- **主要改动**（特性目录 `.scratch/qa-workflow-v2-2-fix-1/`）：
+  1. **单源行锚定 FindingId 解析与整局无发现语义**：`qa-spec-review.mjs` 统一支持 `## S-H1`、`## [S-H1]` 及历史行首 `[S-H1]`，正文引用与示例不参与新发现登记或撞号（既有方括号引用仍可作复审响应）；`hasNoFinding` 仅在零定义时接受整局声明，局部「无发现部分」与例外列表不再吞掉真实发现。
+  2. **混合 changed 骨架按行拆组**：同一 `reviewUnit` 中 `changed` 与 `unchanged` 断言拆成独立复核行并分别预填待判值与「不适用」，消除首次 `seal` 矛盾阻断。
+  3. **`seal` 写前保护与 `qa-run` 统一错误前缀**：`sealReview` 在写轴指标前检查 `.source.json` 是否已存在，后续失败不再将已 `returned` 终态覆盖为 `failed`；`qa-run` 自身错误统一输出 `[qa-run][ERROR]` 前缀，流程指引禁止管道过滤后读取旧日志 `exit 0`。
+- **发布 Dogfood 验收**：2026-11-28 在 Antigravity 宿主下以最小真实非核心修复（`.scratch/agent-doc-tree-fix-1/`，修复 `formatOutlineTreeToMarkdown` 跳级标题深度与缩进，业务提交 `e212b11`）走完标准车道全闭环，r1 独立双轴并行封存且均无发现、`gate-review-final` 机器校验 PASS（来源核验为「自述凭据（弱）」）；未在本次 dogfood 自然触发的异常分支（如混合 changed 骨架拆行、重复 seal 保护、`qa-run` 重名错误等）均由 `470/470` 工具自动化回归与 `254` 份历史原文只读回放覆盖（不宣称全分支真机覆盖）。经人工终审确认后摘除步骤 1「待发布验收」标注。
+
 ## 规律小结
 
-1. **改动由真实运行驱动**：截至 11-26 全部 37 次主仓演变中，绝大部分关键改造直接源自真实需求复盘、跨视角审计、定量基线统计与双对照实测（本地 `.scratch/` 复盘、`QA-WF-02` 基线报告、Phase 3 实测与 ADR 背景均可查证）。
+1. **改动由真实运行驱动**：截至 11-28 全部 38 次主仓演变中，绝大部分关键改造直接源自真实需求复盘、跨视角审计、定量基线统计与双对照实测（本地 `.scratch/` 复盘、`QA-WF-02` 基线报告、Phase 3 实测与 ADR 背景均可查证）。
 2. **文档、预检与门禁按计算/认知成本分层**：规则先写进正本，由契约测试防止多处副本漂移；纯字面静态规则前移至 1 秒确定性 `qa-preflight` 与 `seal` 同步阻断；Spec 审查按 `required` 风险分级、`reviewUnits` 分组与哈希继承减负并核验 `±5` 行真实谓词；不可变快照与双指纹封堵踩脏和无效重跑；语义真伪判断继续交给独立子代理与人工终审。
 3. **降噪与防线必须双轨验证**：0033/0035 加门禁，0040/0042 与 ADR-0047 做减法，ADR-0054 减少无意义重跑，ADR-0065 清理机械误报并补 `:1`/0 子代理防线，ADR-0066 则用效率轨（对照 A，总账降 86.6%）与 4 类变异盲测（对照 B，`4/4` 阻断级全检出）反制古德哈特效应，实证减负并未导致放水。
 4. **通用性来自路径与依赖边界**：普通 `code-review` 与 QA 专用协议并存，原生 Playwright 由宿主根项目声明直接依赖，全部核心工具脚本及 `qa-check/` 六子模块与安装模板始终逐字节同步；项目定制可保留，但不进入通用仓。
@@ -345,5 +354,6 @@
 | 35 | 11-26 | `d463e90` | v2.2 Phase 2：规划减负、`qa-preflight` 扩充、`/handoff` 留痕强绑定、`INFRA-1~6` 与 `OBS-1` | 0066 |
 | 36 | 11-26 | `9be2aa9` | v2.2 Phase 2.5（`OPT-14`）：拆 `qa-check.mjs` 为 6 子模块、单源去重与日落旧双轨 | 0066 |
 | 37 | 11-26 | `12c3cce` | v2.2 Phase 3：干净会话双对照发布验收回填、关闭 `QA-WF-01`/`05`/`07` 与全仓摘标 | 0066（发布验收闭环） |
+| 38 | 11-28 | `c92f860` | 真实慢车道复盘步骤 1：单源 FindingId 解析、混合骨架拆行、seal 写前保护与 qa-run 错误前缀（已随 `e212b11` dogfood 验收） | 0048/0065/0066 |
 
 通用仓同步提交：`d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`（不计入主仓 37 次已提交序号；对照 A 业务合入提交 `7ff16f1` 属业务特性，不计入工作流优化序号）。
