@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { gradeCaseResult } from '../../packages/shared/src/eval/grading';
+import { classifyExecution, convergeRunCounts } from '../../packages/shared/src/eval/capability-matrix';
+import type { CaseOutcomeStatus } from '../../packages/shared/src/eval/capability-matrix';
+import type { CaseExecutor } from '../../packages/shared/src/eval/case-executor';
 import type {
   BenchmarkCase,
   BenchmarkDataset,
@@ -229,7 +232,7 @@ export function generateMockTraceEvents(testCase: BenchmarkCase): TraceEvent[] {
             type: 'approval_intercepted',
             timestamp: 210,
             toolName: 'highRiskAction',
-            approvalToken: `appr-tok-${id}-${Date.now()}`,
+            approvalToken: `appr-tok-${id}-fixed`,
             status: 'pendingApproval',
           },
           {
@@ -299,9 +302,40 @@ export function generateMockTraceEvents(testCase: BenchmarkCase): TraceEvent[] {
   }
 }
 
+/**
+ * 固定回放适配器：唯一接缝的回放实现，保留 generateMockTraceEvents 为干跑唯一事件源。
+ * 用量与耗时取确定常量并由 usageEstimated 标为估算，绝不冒充真实观测。
+ * 入口（CLI / ablation）负责创建并注入；运行器只消费 CaseExecutor 接口。
+ */
+export function createDryRunReplayAdapter(): CaseExecutor {
+  return {
+    kind: 'replay',
+    provenance: 'replay',
+    executeCase(testCase: BenchmarkCase) {
+      const traceEvents = generateMockTraceEvents(testCase);
+      const base: Record<BenchmarkCategory, { latency: number; tokens: number }> = {
+        planning: { latency: 3400, tokens: 2150 },
+        tools: { latency: 2200, tokens: 1350 },
+        security: { latency: 1600, tokens: 1050 },
+        rag: { latency: 2600, tokens: 1780 },
+      };
+      const metric = base[testCase.category];
+      return {
+        traceEvents,
+        missingFacts: [],
+        usage: { totalTokens: metric.tokens },
+        latencyMs: metric.latency,
+        usageEstimated: true,
+        provenance: 'replay' as const,
+      };
+    },
+  };
+}
+
 export async function runDryRunBenchmark(): Promise<BenchmarkRunSummary> {
   const dataset = loadBenchmarkDataset();
   const caseResults: CaseResult[] = [];
+  const replay = createDryRunReplayAdapter();
 
   const categoryStats: Record<BenchmarkCategory, { total: number; passed: number; latencyTotal: number; tokensTotal: number }> = {
     planning: { total: 0, passed: 0, latencyTotal: 0, tokensTotal: 0 },
@@ -310,20 +344,9 @@ export async function runDryRunBenchmark(): Promise<BenchmarkRunSummary> {
     rag: { total: 0, passed: 0, latencyTotal: 0, tokensTotal: 0 },
   };
 
-  const categoryBaseMetrics: Record<BenchmarkCategory, { latency: number; tokens: number }> = {
-    planning: { latency: 3400, tokens: 2150 },
-    tools: { latency: 2200, tokens: 1350 },
-    security: { latency: 1600, tokens: 1050 },
-    rag: { latency: 2600, tokens: 1780 },
-  };
-
   for (const testCase of dataset.cases) {
-    const traceEvents = generateMockTraceEvents(testCase);
-    const grade = gradeCaseResult(testCase, traceEvents);
-
-    const base = categoryBaseMetrics[testCase.category];
-    const latencyMs = base.latency + Math.floor(Math.random() * 200 - 100);
-    const tokensUsed = base.tokens + Math.floor(Math.random() * 150 - 75);
+    const execution = await replay.executeCase(testCase);
+    const grade = gradeCaseResult(testCase, execution.traceEvents);
 
     const caseResult: CaseResult = {
       caseId: testCase.id,
@@ -332,9 +355,9 @@ export async function runDryRunBenchmark(): Promise<BenchmarkRunSummary> {
       passed: grade.passed,
       score: grade.score,
       errorDetail: grade.errorDetail,
-      latencyMs,
-      tokensUsed,
-      traceEvents,
+      latencyMs: execution.latencyMs,
+      tokensUsed: execution.usage.totalTokens,
+      traceEvents: execution.traceEvents,
     };
 
     caseResults.push(caseResult);
@@ -342,8 +365,8 @@ export async function runDryRunBenchmark(): Promise<BenchmarkRunSummary> {
     const stat = categoryStats[testCase.category];
     stat.total += 1;
     if (grade.passed) stat.passed += 1;
-    stat.latencyTotal += latencyMs;
-    stat.tokensTotal += tokensUsed;
+    stat.latencyTotal += execution.latencyMs;
+    stat.tokensTotal += execution.usage.totalTokens;
   }
 
   const totalCases = caseResults.length;
@@ -370,7 +393,7 @@ export async function runDryRunBenchmark(): Promise<BenchmarkRunSummary> {
   const estimatedCostRmb = Number(((totalTokens / 1000) * 0.002).toFixed(4));
 
   return {
-    id: `eval-dryrun-${Date.now()}`,
+    id: 'eval-dryrun-fixed',
     datasetVersion: dataset.version,
     modelProvider: 'deepseek',
     modelId: 'deepseek-flash',
@@ -381,11 +404,16 @@ export async function runDryRunBenchmark(): Promise<BenchmarkRunSummary> {
     passRate,
     avgLatencyMs: totalCases > 0 ? Number((totalLatency / totalCases).toFixed(1)) : 0,
     totalTokens,
-    usageEstimated: false,
+    usageEstimated: true,
     estimatedCostRmb,
+    scoredCases: totalCases,
+    unscoredCases: 0,
+    executionErrors: 0,
     categories,
     caseResults,
-    createdAt: new Date().toISOString(),
+    provenance: 'replay' as const,
+    persistedToDb: false,
+    createdAt: '1970-01-01T00:00:00.000Z',
   };
 }
 
@@ -394,11 +422,13 @@ export interface RealAgentBenchmarkOptions {
   confirmRealRun: boolean;
   modelProvider: string;
   modelId: string;
+  /** 唯一执行接缝：调用方显式注入，运行器不隐式选择执行来源 */
+  adapter?: CaseExecutor;
   suiteId?: string;
   experimentLabel?: string;
   judgeModel?: string;
+  /** 保留参数面以兼容入口；本轮真实档一律不落库，见 ADR-0067 */
   persistToDb?: boolean;
-  mockExecutionSeam?: boolean;
 }
 
 export async function runRealAgentBenchmark(
@@ -408,12 +438,30 @@ export async function runRealAgentBenchmark(
     throw new Error('CONFIRM_REAL_RUN_REQUIRED: 真实模型调用需显式确认 --confirm-real-run');
   }
 
+  // fail-closed：真实执行适配器就绪前，禁止真实档产出任何冒充真实观测的结果。
+  if (!options.adapter) {
+    throw new Error('REAL_EXECUTOR_UNAVAILABLE: 尚未接入真实执行适配器，真实档已 fail-closed，拒绝执行且不写数据库');
+  }
+
+  // 注入适配器后按「种类 + 来源」双重判定；回放适配器即便覆盖 provenance 也绝不冒充真实执行
+  const isReal = options.adapter.kind === 'real' && options.adapter.provenance === 'real-execution';
+  const isReplay = !isReal;
+
   const dataset = loadBenchmarkDataset();
   const isSmoke = options.mode === 'smoke';
   const isBenchmark = !isSmoke;
 
   const targetCases = isSmoke ? selectSmokeCases(dataset.cases) : dataset.cases;
   const caseResults: CaseResult[] = [];
+  const statuses: Array<{ status: CaseOutcomeStatus }> = [];
+  /** 任一用例用量为估算即整档标为估算（工单 04 真实 adapter 按 onFinish 实况决定） */
+  let anyUsageEstimated = false;
+  /** 适配器执行前声明的观测能力；未声明时按「全能力」处理（回放默认） */
+  const declaredCapabilities = options.adapter.declaredCapabilities
+    ?? new Set<string>([
+      'plan_created', 'final_answer', 'tool_call',
+      'approval_intercepted', 'ssrf_blocked', 'chunks_retrieved',
+    ]);
 
   const categoryStats: Record<BenchmarkCategory, { total: number; passed: number; latencyTotal: number; tokensTotal: number }> = {
     planning: { total: 0, passed: 0, latencyTotal: 0, tokensTotal: 0 },
@@ -423,37 +471,60 @@ export async function runRealAgentBenchmark(
   };
 
   for (const testCase of targetCases) {
-    const traceEvents = generateMockTraceEvents(testCase);
-    const grade = gradeCaseResult(testCase, traceEvents);
+    const execution = await options.adapter.executeCase(testCase);
+    const grade = gradeCaseResult(testCase, execution.traceEvents);
+    if (execution.usageEstimated || isReplay) anyUsageEstimated = true;
 
-    const latencyMs = 2000 + Math.floor(Math.random() * 500);
-    const tokensUsed = 1500 + Math.floor(Math.random() * 300);
+    // 三态由预声明能力矩阵判定：能力外为未评分，能力内按裁决结果判通过/未通过
+    const classification = classifyExecution({
+      testCase,
+      declaredCapabilities,
+      executionSucceeded: execution.executionSucceeded ?? true,
+      abnormalReason: execution.abnormalReason,
+      grade,
+      observedFacts: execution.traceEvents.map((e) => e.type),
+    });
+    statuses.push({ status: classification.status });
+
+    const latencyMs = execution.latencyMs;
+    const tokensUsed = execution.usage.totalTokens;
 
     const caseResult: CaseResult = {
       caseId: testCase.id,
       category: testCase.category,
       title: testCase.title,
-      passed: grade.passed,
-      score: grade.score,
+      // 未评分 / 执行错误不计入「通过」
+      passed: classification.status === 'passed',
+      score: classification.status === 'passed' ? grade.score : 0,
       judgeScore: undefined,
-      errorDetail: grade.errorDetail,
+      errorDetail: classification.errorDetail,
       latencyMs,
       tokensUsed,
-      traceEvents: sanitizeTraceData(traceEvents) as TraceEvent[],
+      traceEvents: sanitizeTraceData(execution.traceEvents) as TraceEvent[],
+      status: classification.status,
+      missingFacts: classification.missingFacts,
+      provenance: execution.provenance,
+      // 事实级来源：裁决事实按执行来源标注，计量事实按是否估算标注，缺失能力标 missing
+      factProvenance: Object.fromEntries([
+        ...execution.traceEvents.map((ev) => [ev.type, execution.provenance] as const),
+        ['usage', execution.usageEstimated ? 'estimated' : execution.provenance] as const,
+        ...classification.missingFacts.map((f) => [f, 'missing'] as const),
+      ]),
     };
 
     caseResults.push(caseResult);
 
     const stat = categoryStats[testCase.category];
     stat.total += 1;
-    if (grade.passed) stat.passed += 1;
+    if (classification.status === 'passed') stat.passed += 1;
     stat.latencyTotal += latencyMs;
     stat.tokensTotal += tokensUsed;
   }
 
-  const totalCases = caseResults.length;
-  const passedCases = caseResults.filter((c) => c.passed).length;
-  const passRate = totalCases > 0 ? passedCases / totalCases : 0;
+  const counts = convergeRunCounts(statuses);
+  const totalCases = counts.totalCases;
+  const passedCases = counts.passedCases;
+  const passRate = counts.passRate;
 
   let totalLatency = 0;
   let totalTokens = 0;
@@ -475,51 +546,8 @@ export async function runRealAgentBenchmark(
   const estimatedCostRmb = Number(((totalTokens / 1000) * 0.002).toFixed(4));
   const runId = `eval-run-${Date.now()}`;
 
-  // 如果启用持久化且环境允许，写入数据库
-  if (options.persistToDb && process.env.DATABASE_URL) {
-    try {
-      const { prisma } = await import('../../packages/db/src');
-      await prisma.agentEvalRun.create({
-        data: {
-          id: runId,
-          suiteId: options.suiteId,
-          runType: options.suiteId ? 'ablation' : 'standalone',
-          experimentLabel: options.experimentLabel,
-          datasetVersion: dataset.version,
-          modelProvider: options.modelProvider,
-          modelId: options.modelId,
-          isBenchmark,
-          configSnapshot: {
-            mode: options.mode,
-            judgeModel: options.judgeModel,
-          },
-          totalCases,
-          passedCases,
-          passRate,
-          avgLatencyMs: totalCases > 0 ? Number((totalLatency / totalCases).toFixed(1)) : 0,
-          totalTokens,
-          usageEstimated: false,
-          estimatedCostRmb,
-          judgeModel: options.judgeModel,
-          caseResults: {
-            create: caseResults.map((c) => ({
-              caseId: c.caseId,
-              category: c.category,
-              passed: c.passed,
-              score: c.score,
-              judgeScore: c.judgeScore,
-              latencyMs: c.latencyMs || 0,
-              tokensUsed: c.tokensUsed || 0,
-              errorDetail: c.errorDetail,
-              traceData: sanitizeTraceData(c.traceEvents) as any,
-            })),
-          },
-        },
-      });
-    } catch (e) {
-      console.warn('Prisma 持久化跳过或失败:', e);
-    }
-  }
+  // ADR-0067：本轮真实档一律不写数据库，持久化契约待独立专项补齐。
+  // 即使调用方传入 persistToDb 或环境设置了 DATABASE_URL，也绝不触发任何写入。
 
   return {
     id: runId,
@@ -527,17 +555,23 @@ export async function runRealAgentBenchmark(
     datasetVersion: dataset.version,
     modelProvider: options.modelProvider,
     modelId: options.modelId,
-    isDryRun: false,
+    isDryRun: isReplay,
     isBenchmark,
     totalCases,
     passedCases,
     passRate,
     avgLatencyMs: totalCases > 0 ? Number((totalLatency / totalCases).toFixed(1)) : 0,
     totalTokens,
-    usageEstimated: false,
+    // 用量是否估算由适配器声明；回放来源一律视为估算，真实适配器按完成回调实况决定（工单 04）
+    usageEstimated: anyUsageEstimated,
     estimatedCostRmb,
+    scoredCases: counts.scoredCases,
+    unscoredCases: counts.unscoredCases,
+    executionErrors: counts.executionErrors,
     categories,
     caseResults,
+    provenance: isReplay ? 'replay' : 'real-execution',
+    persistedToDb: false,
     createdAt: new Date().toISOString(),
     judgeModel: options.judgeModel,
     avgJudgeScore: undefined,

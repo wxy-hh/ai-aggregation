@@ -24,14 +24,21 @@ import { createKnowledgeSearchTool } from '../app/api/chat/_lib/agent/tools/know
 import { validateCitations } from '@/lib/rag/citation';
 import type { CitationAnchor } from '@repo/shared';
 
-// Mock streamText，夺回模型响应控制权
-const { streamTextMock } = vi.hoisted(() => {
-  return { streamTextMock: vi.fn() };
+// Mock streamText / generateText，夺回模型响应控制权。
+// generateText 仅被前置规划节点使用：返回非法 JSON 使其按生产语义平滑降级为 null，
+// 避免评测用例因未 mock 的规划调用走真实 createProvider 而触发 API key 报错，
+// 也保证各 Case 的 streamTextMock 轮次序列不被额外消耗。
+const { streamTextMock, generateTextMock } = vi.hoisted(() => {
+  return { streamTextMock: vi.fn(), generateTextMock: vi.fn() };
 });
 
 vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>();
-  return { ...actual, streamText: streamTextMock };
+  return {
+    ...actual,
+    streamText: streamTextMock,
+    generateText: generateTextMock,
+  };
 });
 
 /** 辅助函数：构造模拟的模型流式返回 */
@@ -107,6 +114,8 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    // 前置规划节点统一降级为 null（非法 JSON），走常规 ReAct 循环，不消耗 streamText 轮次
+    generateTextMock.mockResolvedValue({ text: '' });
   });
 
   // =========================================================================
@@ -655,7 +664,15 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       })
     );
 
-    // 第 2 轮收尾：模型结合检索切片事实与 [^1] 出处进行严谨回答
+    // 第 2 轮决策：模型结合检索切片事实输出阶段小结（已执行过工具，按编排语义作为
+    // agent_note 下发，不进入 text-delta 正文），随后转入独立收尾步
+    streamTextMock.mockReturnValueOnce(
+      makeMockStreamResult({
+        textParts: ['已检索到架构规范切片，正在整理引用与结论。'],
+      })
+    );
+
+    // 第 3 轮独立收尾步：产出带 [^1] 出处锚点的最终回答正文
     streamTextMock.mockReturnValueOnce(
       makeMockStreamResult({
         textParts: [

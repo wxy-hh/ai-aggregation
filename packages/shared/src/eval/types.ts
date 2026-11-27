@@ -72,6 +72,8 @@ export interface TraceEvent {
   checkpointId?: string;
   checkpointStatus?: string;
   toolName?: string;
+  /** 配对标识：工具调用与结果按 callId 精确配对，审批挂起的调用不得算作已执行写操作 */
+  callId?: string;
   args?: unknown;
   status?: string | number;
   approvalToken?: string;
@@ -97,6 +99,14 @@ export interface CaseResult extends CaseGradingResult {
   category: BenchmarkCategory;
   title: string;
   traceEvents: TraceEvent[];
+  /** 三态：通过 / 未通过 / 未评分 / 执行错误 */
+  status?: 'passed' | 'failed' | 'unscored' | 'execution_error';
+  /** 未评分时写明超出观测能力的裁决事实类型 */
+  missingFacts?: string[];
+  /** 该项裁决事实与计量事实的来源（用例级） */
+  provenance?: 'real-execution' | 'replay' | 'estimated' | 'missing';
+  /** 事实级来源：按裁决事实类型标注每项事实的出处（US 22 / TC06-4） */
+  factProvenance?: Record<string, 'real-execution' | 'replay' | 'estimated' | 'missing'>;
 }
 
 export interface CategorySummary {
@@ -123,7 +133,14 @@ export interface BenchmarkRunSummary {
   totalTokens: number;
   usageEstimated: boolean;
   estimatedCostRmb: number;
+  scoredCases: number;
+  unscoredCases: number;
+  executionErrors: number;
   categories: Record<BenchmarkCategory, CategorySummary>;
   caseResults: CaseResult[];
+  /** 本次执行的事实来源层级（编排级真实执行 / 固定回放） */
+  provenance?: 'real-execution' | 'replay' | 'estimated' | 'missing';
+  /** 本轮真实档未写数据库，报告据此显式标注 */
+  persistedToDb?: boolean;
   createdAt: string;
 }

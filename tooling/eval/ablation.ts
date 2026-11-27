@@ -1,6 +1,9 @@
 import { execSync } from 'child_process';
 import { loadEvalCorpus, validateCorpusFingerprint } from '../../packages/shared/src/eval/corpus';
 import { runDryRunBenchmark, runRealAgentBenchmark } from './runner';
+import { resolveAdapterKind } from './composition';
+import { generateMarkdownReport } from './report';
+import type { CaseExecutor } from '../../packages/shared/src/eval/case-executor';
 import type { BenchmarkRunSummary } from '../../packages/shared/src/eval/types';
 
 export interface AblationRunItem extends BenchmarkRunSummary {
@@ -28,6 +31,8 @@ export interface RunAblationOptions {
   modelId?: string;
   isDryRun?: boolean;
   confirmRealRun?: boolean;
+  /** 组合根接缝：测试注入受控桩适配器，避免真实档依赖真实模型；缺省由入口动态创建真实适配器 */
+  adapterFactory?: () => Promise<CaseExecutor> | CaseExecutor;
 }
 
 export function getGitInfo(): { commitHash: string; isDirty: boolean } {
@@ -97,6 +102,20 @@ export async function runAblationSuite(options: RunAblationOptions = {}): Promis
     },
   ];
 
+  // 组合根：消融入口与 CLI 共用 resolveAdapterKind 决策，适配器由入口创建并注入
+  let realAdapter: CaseExecutor | undefined;
+  if (!isDryRun) {
+    const kind = resolveAdapterKind({ isDryRun: false, confirmRealRun: Boolean(options.confirmRealRun) });
+    if (kind === 'real') {
+      if (options.adapterFactory) {
+        realAdapter = await options.adapterFactory();
+      } else {
+        const { createRealAgentAdapter } = await import('../../apps/web/src/eval/case-executor/index.ts');
+        realAdapter = createRealAgentAdapter();
+      }
+    }
+  }
+
   const runs: AblationRunItem[] = [];
 
   for (const exp of experimentConfigs) {
@@ -117,14 +136,16 @@ export async function runAblationSuite(options: RunAblationOptions = {}): Promis
         avgLatencyMs: adjustedLatency,
       };
     } else {
+      // 组合根：消融真实档同样显式注入真实执行适配器；未显式确认时保持 undefined 以 fail-closed
       summary = await runRealAgentBenchmark({
         mode: 'full',
         confirmRealRun: Boolean(options.confirmRealRun),
         modelProvider,
         modelId,
+        adapter: realAdapter,
         suiteId,
         experimentLabel: exp.label,
-        persistToDb: true,
+        persistToDb: false,
       });
     }
 
@@ -163,6 +184,14 @@ export function printAblationMatrix(result: AblationSuiteResult): void {
     );
   }
   console.log('================================================================\n');
+
+  // 真实档（非固定回放）与 CLI 真实档口径一致：逐组产出 Markdown 报告，只描述本次执行事实
+  if (result.runs.some((r) => r.provenance === 'real-execution')) {
+    for (const r of result.runs) {
+      console.log(`\n----- [消融真实档报告] ${r.experimentLabel} (${r.suiteId}) -----\n`);
+      console.log(generateMarkdownReport(r));
+    }
+  }
 }
 
 export async function main() {

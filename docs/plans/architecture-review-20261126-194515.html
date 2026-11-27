@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI-Aggregation 架构审查 · /chat 与 /admin/eval</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis" } });
+    </script>
+    <style>
+      .seam { border: 2px dashed #94a3b8; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); color: white; }
+      .leak { border-color: #f87171 !important; background: #fef2f2 !important; }
+      .diagram-label { font-size: 0.68rem; line-height: 1rem; letter-spacing: .08em; text-transform: uppercase; color: #64748b; font-weight: 700; }
+      .module-box { border: 1px solid #cbd5e1; background: white; border-radius: .65rem; padding: .65rem .8rem; font-size: .75rem; line-height: 1.1rem; text-align: center; }
+      .arrow { color: #94a3b8; font-size: 1.25rem; line-height: 1; text-align: center; }
+      .file-list code { overflow-wrap: anywhere; }
+      .mermaid { display: flex; justify-content: center; align-items: center; min-height: 260px; }
+      @media (max-width: 767px) { .mermaid { min-height: 220px; } }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-14 space-y-12">
+      <header class="border-b border-stone-300 pb-8">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-5">
+          <div>
+            <p class="text-xs uppercase tracking-[0.22em] text-emerald-700 font-bold">Architecture review</p>
+            <h1 class="mt-3 font-serif text-4xl sm:text-5xl tracking-tight">AI-Aggregation</h1>
+            <p class="mt-3 text-slate-600 font-mono text-sm">/chat · /admin/eval · 2026-11-26</p>
+          </div>
+          <div class="grid grid-cols-2 gap-x-5 gap-y-3 text-xs text-slate-600">
+            <div class="flex items-center gap-2"><span class="w-5 h-4 border border-slate-400 bg-white rounded-sm"></span>module</div>
+            <div class="flex items-center gap-2"><span class="w-5 h-4 seam rounded-sm"></span>seam</div>
+            <div class="flex items-center gap-2"><span class="w-6 border-t-2 border-red-400"></span>leakage / drift</div>
+            <div class="flex items-center gap-2"><span class="w-5 h-4 deep rounded-sm"></span>deep module</div>
+          </div>
+        </div>
+      </header>
+
+      <section id="candidates" class="space-y-10">
+        <article id="candidate-1" class="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
+          <div class="p-6 sm:p-8 border-b border-stone-200">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">Strong</span>
+              <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-mono">ports &amp; adapters</span>
+              <span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs">/admin/eval</span>
+            </div>
+            <h2 class="font-serif text-3xl">01 · 建立真实的 Case Executor module</h2>
+            <div class="file-list mt-5 grid md:grid-cols-2 gap-x-6 gap-y-2 font-mono text-sm text-slate-600">
+              <code>tooling/eval/runner.ts:85-300</code>
+              <code>tooling/eval/runner.ts:392-545</code>
+              <code>tooling/eval/cli.ts:48-77</code>
+              <code>docs/adr/0063-agent-eval-benchmark-architecture.md</code>
+            </div>
+          </div>
+          <div class="p-6 sm:p-8 space-y-7">
+            <div class="grid lg:grid-cols-2 gap-5">
+              <div>
+                <p class="diagram-label mb-3">Before · 两个入口，同一个模拟 implementation</p>
+                <div class="rounded-xl border border-red-200 bg-red-50/40 p-3">
+                  <pre class="mermaid">
+flowchart LR
+  D[Dry-run] --> M[generateMockTraceEvents]
+  R[Real smoke or full] -. 同样调用 .-> M
+  M --> G[DeterministicGrading]
+  N[Random latency and tokens] --> S[AgentEvalRun]
+  G --> S
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#991b1b;
+  class R,M,N leak;
+                  </pre>
+                </div>
+              </div>
+              <div>
+                <p class="diagram-label mb-3">After · 两种真实 adapter，一个执行 seam</p>
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
+                  <pre class="mermaid">
+flowchart LR
+  C[BenchmarkCase] --> E[Case Executor]
+  E --> D[Dry-run replay adapter]
+  E --> R[Real Agent adapter]
+  D --> T[Trace and usage]
+  R --> T
+  T --> G[DeterministicGrading]
+  G --> S[AgentEvalRun]
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a,stroke-width:3px;
+  class E deep;
+                  </pre>
+                </div>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Problem</h3>
+                <p class="mt-2 text-sm leading-6"><code>runRealAgentBenchmark</code> 在 <code>runner.ts:426</code> 仍生成模拟轨迹，在 <code>:429-430</code> 随机生成时延与 Token；真实执行 interface 存在，implementation 却与 dry-run 相同。</p>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Solution</h3>
+                <p class="mt-2 text-sm leading-6">加深 Case Executor：统一拥有真实 Agent 调用、事件投影、沙箱语料与用量事实；dry-run 只替换执行 adapter，DeterministicGrading 保持纯函数。</p>
+              </div>
+            </div>
+            <div class="rounded-lg bg-stone-100 px-4 py-3 text-sm"><strong>Deletion test：</strong>删除模拟轨迹生成器，两条执行路径同时失去唯一事件源；复杂度没有第二个真实 module 承接。</div>
+            <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>locality</strong><br><span class="text-slate-600">执行事实集中一处</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>leverage</strong><br><span class="text-slate-600">四种运行共用 seam</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>tests</strong><br><span class="text-slate-600">回放轨迹驱动同一 interface</span></li>
+            </ul>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">不冲突 ADR-0063；它正是 §2、§5、§6 尚未落地的真实执行部分。保留 CLI 执行与只读看板。</div>
+          </div>
+        </article>
+
+        <article id="candidate-2" class="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
+          <div class="p-6 sm:p-8 border-b border-stone-200">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">Strong</span>
+              <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-mono">in-process</span>
+              <span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs">/chat</span>
+            </div>
+            <h2 class="font-serif text-3xl">02 · 统一实时流与 Attach 的事件应用</h2>
+            <div class="file-list mt-5 grid md:grid-cols-2 gap-x-6 gap-y-2 font-mono text-sm text-slate-600">
+              <code>apps/web/src/stores/chat-store.ts:359-712</code>
+              <code>apps/web/src/stores/chat-store.ts:1020-1210</code>
+              <code>apps/web/src/stores/chat-projectors.ts:160-192</code>
+              <code>apps/web/src/lib/utils/chat-stream.ts:63-92</code>
+            </div>
+          </div>
+          <div class="p-6 sm:p-8 space-y-7">
+            <div class="grid lg:grid-cols-2 gap-5">
+              <div>
+                <p class="diagram-label mb-3">Before · 同一事件契约，两套收尾与落盘</p>
+                <div class="rounded-xl border border-red-200 bg-red-50/40 p-3">
+                  <pre class="mermaid">
+flowchart TB
+  L[Live SSE] --> A[Realtime event application]
+  R[RunEventLog replay] --> B[Attach event application]
+  A --> P[ChatStreamProjector]
+  B --> P
+  A --> X[rAF plus throttled persistence]
+  B --> Y[Persist every text delta]
+  A --> Z[Shared finalizer]
+  B -. missing cleanup .-> W[Different terminal state]
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#991b1b;
+  class B,Y,W leak;
+                  </pre>
+                </div>
+              </div>
+              <div>
+                <p class="diagram-label mb-3">After · 来源不同，领域应用相同</p>
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
+                  <pre class="mermaid">
+flowchart TB
+  L[Live SSE adapter] --> E[Stream event application]
+  R[Replay adapter] --> E
+  E --> P[ChatStreamProjector]
+  E --> S[Shared scheduling and persistence]
+  E --> F[Shared terminal projection]
+  P --> C[ConversationSnapshot]
+  S --> C
+  F --> C
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a,stroke-width:3px;
+  class E deep;
+                  </pre>
+                </div>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Problem</h3>
+                <p class="mt-2 text-sm leading-6">Attach 在 <code>chat-store.ts:1097-1155</code> 重写实时路径的事件应用；每个正文帧立即落盘，且 <code>finalize</code> 不复用工具归一、推理计时与完整终态投影。</p>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Solution</h3>
+                <p class="mt-2 text-sm leading-6">把实时流与 RunEventLog 重放作为两个事件源 adapter，接入同一事件应用 module；来源差异留在 seam 外，消息演进与收尾只保留一套 implementation。</p>
+              </div>
+            </div>
+            <div class="rounded-lg bg-stone-100 px-4 py-3 text-sm"><strong>Deletion test：</strong>删除任一副本都不会删除领域规则，规则仍留在另一副本；合并后复杂度集中到同一 module，而非散回调用者。</div>
+            <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>locality</strong><br><span class="text-slate-600">事件修复只改一处</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>leverage</strong><br><span class="text-slate-600">Attach 继承全部投影规则</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>tests</strong><br><span class="text-slate-600">同一事件序列验证两种来源</span></li>
+            </ul>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">不推翻 ADR-0045：仍保留单一 Zustand Store 与 ChatStreamProjector；不引入平行 Store。</div>
+          </div>
+        </article>
+
+        <article id="candidate-3" class="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
+          <div class="p-6 sm:p-8 border-b border-stone-200">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">Strong</span>
+              <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-mono">in-process</span>
+              <span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs">/admin/eval</span>
+            </div>
+            <h2 class="font-serif text-3xl">03 · 让 Eval Dashboard Projection 只呈现事实</h2>
+            <div class="file-list mt-5 grid md:grid-cols-2 gap-x-6 gap-y-2 font-mono text-sm text-slate-600">
+              <code>apps/web/src/app/api/admin/eval/reports/route.ts:65-248</code>
+              <code>apps/web/src/app/admin/eval/page.tsx:79-275</code>
+              <code>apps/web/src/app/admin/eval/page.tsx:300-323</code>
+              <code>apps/web/src/app/api/admin/eval/reports/route.test.ts</code>
+            </div>
+          </div>
+          <div class="p-6 sm:p-8 space-y-7">
+            <div class="grid lg:grid-cols-2 gap-5">
+              <div>
+                <p class="diagram-label mb-3">Before · 空记录被多层示例数据覆盖</p>
+                <div class="h-[290px] rounded-xl border border-red-200 bg-red-50/40 p-5 flex flex-col justify-center gap-3">
+                  <div class="module-box">AgentEvalRun · 空集合</div>
+                  <div class="arrow">↓</div>
+                  <div class="module-box leak"><strong>route module</strong><br>40 题 · 87.5% · 2445ms<br>3 个模型 · 5 个失败用例</div>
+                  <div class="arrow">↓</div>
+                  <div class="module-box leak"><strong>page module</strong><br>DEFAULT_* 再次回填<br>请求失败仍显示示例轨迹</div>
+                  <div class="arrow">↓</div>
+                  <div class="module-box leak">导出“官方全量”报告</div>
+                </div>
+              </div>
+              <div>
+                <p class="diagram-label mb-3">After · 一个只读投影，显式空状态</p>
+                <div class="h-[290px] rounded-xl border border-emerald-200 bg-emerald-50/30 p-5 flex flex-col justify-center gap-3">
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="module-box">持久行集合</div>
+                    <div class="module-box">显式空集合</div>
+                  </div>
+                  <div class="arrow">↓</div>
+                  <div class="deep rounded-xl p-5 text-center">
+                    <p class="text-xs uppercase tracking-widest text-emerald-300">small interface</p>
+                    <p class="mt-2 font-semibold">Eval Dashboard Projection</p>
+                    <p class="mt-2 text-xs text-slate-300">聚合 · 空状态 · 派生指标 · 导出事实</p>
+                  </div>
+                  <div class="arrow">↓</div>
+                  <div class="module-box">页面与导出只消费同一视图事实</div>
+                </div>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Problem</h3>
+                <p class="mt-2 text-sm leading-6">数据库为空时，route module 构造完整示例结果；page module 又用 <code>DEFAULT_*</code> 回填，连请求失败也展示示例失败轨迹，无法区分观测与演示。</p>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Solution</h3>
+                <p class="mt-2 text-sm leading-6">用一个纯只读投影 module 拥有汇总、横评、AblationMatrix、失败用例和空状态语义；页面与导出不得自行补充任何指标。</p>
+              </div>
+            </div>
+            <div class="rounded-lg bg-stone-100 px-4 py-3 text-sm"><strong>Deletion test：</strong>只删 route 的示例回填，页面仍显示同类示例；说明复杂度泄漏在两个 module，必须同时收拢到投影 seam。</div>
+            <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>locality</strong><br><span class="text-slate-600">空状态只有一个事实源</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>leverage</strong><br><span class="text-slate-600">四个看板区域共享投影</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>tests</strong><br><span class="text-slate-600">无数据库也验证诚实空态</span></li>
+            </ul>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">不冲突 ADR-0063；该候选强化“后台纯分析看板”，不在 HTTP route 内执行评测。</div>
+          </div>
+        </article>
+
+        <article id="candidate-4" class="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
+          <div class="p-6 sm:p-8 border-b border-stone-200">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">Strong</span>
+              <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-mono">in-process</span>
+              <span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs">/admin/eval</span>
+            </div>
+            <h2 class="font-serif text-3xl">04 · 让 Ablation Suite Contract 驱动执行与证据</h2>
+            <div class="file-list mt-5 grid md:grid-cols-2 gap-x-6 gap-y-2 font-mono text-sm text-slate-600">
+              <code>tooling/eval/ablation.ts:49-147</code>
+              <code>tooling/eval/runner.ts:392-402</code>
+              <code>tooling/eval/runner.ts:478-518</code>
+              <code>packages/db/prisma/schema.prisma:812-840</code>
+            </div>
+          </div>
+          <div class="p-6 sm:p-8 space-y-7">
+            <div class="grid lg:grid-cols-2 gap-5">
+              <div>
+                <p class="diagram-label mb-3">Before · 配置是标签，不是执行事实</p>
+                <div class="h-[300px] rounded-xl border border-red-200 bg-red-50/40 p-5 flex items-center justify-center">
+                  <div class="w-full max-w-sm space-y-3">
+                    <div class="module-box">基准组<br><span class="text-slate-500">全部开关开启</span></div>
+                    <div class="module-box leak">无 Rerank 组<br><span class="text-red-600">dry-run 手写 −5% / −180ms</span></div>
+                    <div class="module-box leak">无 Evaluator 组<br><span class="text-red-600">dry-run 手写 −12.5% / −650ms</span></div>
+                    <div class="arrow">↓ 真实运行未接收这些开关</div>
+                    <div class="module-box leak">相同模拟执行 + 事后贴 configSnapshot</div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p class="diagram-label mb-3">After · 套件声明贯穿执行、落库与矩阵</p>
+                <div class="h-[300px] rounded-xl border border-emerald-200 bg-emerald-50/30 p-5 flex items-center justify-center">
+                  <div class="w-full max-w-sm space-y-3">
+                    <div class="deep rounded-xl p-4 text-center">
+                      <p class="font-semibold">Ablation Suite Contract</p>
+                      <p class="mt-1 text-xs text-slate-300">固定模型 · 数据集 · 语料指纹 · 超时<br>声明唯一变量与代码版本</p>
+                    </div>
+                    <div class="arrow">↓</div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div class="module-box">Case Executor<br>实际变量</div>
+                      <div class="module-box">AgentEvalRun<br>可追溯证据</div>
+                    </div>
+                    <div class="arrow">↓</div>
+                    <div class="module-box">可校验的 AblationMatrix</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Problem</h3>
+                <p class="mt-2 text-sm leading-6"><code>ablation.ts:120-128</code> 未把实验开关传入执行；dry-run 用偏置常量制造差异，真实运行只在结果对象上补标签，commit 与语料证据也未进入持久记录。</p>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Solution</h3>
+                <p class="mt-2 text-sm leading-6">让套件契约同时拥有不变量校验、单变量差量、执行参数透传与记录证据；看板只比较通过同一契约校验的 AgentEvalRun。</p>
+              </div>
+            </div>
+            <div class="rounded-lg bg-stone-100 px-4 py-3 text-sm"><strong>Deletion test：</strong>删除配置与偏置常量，现有执行路径仍可按相同模拟逻辑运行；说明这些字段当前没有行为 leverage。</div>
+            <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>locality</strong><br><span class="text-slate-600">对照不变量集中校验</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>leverage</strong><br><span class="text-slate-600">执行与看板共享事实</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>tests</strong><br><span class="text-slate-600">断言变量差集而非字面量</span></li>
+            </ul>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">依赖候选 01 的真实执行 adapter；不冲突 ADR-0063 §4，而是补齐其严格对照约束。</div>
+          </div>
+        </article>
+
+        <article id="candidate-5" class="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
+          <div class="p-6 sm:p-8 border-b border-stone-200">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">Strong</span>
+              <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-mono">in-process</span>
+              <span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs">/chat</span>
+            </div>
+            <h2 class="font-serif text-3xl">05 · 收拢 AgentPlan 的终态收敛</h2>
+            <div class="file-list mt-5 grid md:grid-cols-2 gap-x-6 gap-y-2 font-mono text-sm text-slate-600">
+              <code>apps/web/src/app/api/chat/_lib/agent/agent-runner.ts:1009-1030</code>
+              <code>apps/web/src/app/api/chat/_lib/agent/agent-runner.ts:1081-1123</code>
+              <code>apps/web/src/stores/chat-store.ts:962-978</code>
+              <code>apps/web/src/stores/conversation-orchestrator.ts:240-258</code>
+            </div>
+          </div>
+          <div class="p-6 sm:p-8 space-y-7">
+            <div class="grid lg:grid-cols-2 gap-5">
+              <div>
+                <p class="diagram-label mb-3">Before · 同一终态事实有四种解释</p>
+                <div class="h-[300px] rounded-xl border border-red-200 bg-red-50/40 p-5 flex flex-col justify-center gap-3">
+                  <div class="module-box">Agent 运行终态</div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="module-box">成功<br><span class="text-emerald-700">逐步广播</span></div>
+                    <div class="module-box leak">异常<br><span class="text-red-600">本地改 plan，不广播</span></div>
+                    <div class="module-box">主动中止<br><span class="text-slate-500">客户端再算一次</span></div>
+                    <div class="module-box leak">刷新恢复<br><span class="text-red-600">isStreaming 先变 false</span></div>
+                  </div>
+                  <div class="arrow">↓</div>
+                  <div class="module-box leak">running Checkpoint 可能继续 animate-spin</div>
+                </div>
+              </div>
+              <div>
+                <p class="diagram-label mb-3">After · 一个终态收敛 module，两个出口</p>
+                <div class="h-[300px] rounded-xl border border-emerald-200 bg-emerald-50/30 p-5 flex flex-col justify-center gap-3">
+                  <div class="module-box">运行终态事实 × 当前 Checkpoint 状态</div>
+                  <div class="arrow">↓</div>
+                  <div class="deep rounded-xl p-5 text-center">
+                    <p class="text-xs uppercase tracking-widest text-emerald-300">small interface</p>
+                    <p class="mt-2 font-semibold">AgentPlan terminal convergence</p>
+                    <p class="mt-2 text-xs text-slate-300">完成 · 失败 · 中止 · 审批暂停</p>
+                  </div>
+                  <div class="arrow">↓</div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="module-box">plan_step_update<br>广播</div>
+                    <div class="module-box">ConversationSnapshot<br>恢复</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Problem</h3>
+                <p class="mt-2 text-sm leading-6">成功路径广播收敛事件；异常路径只修改服务端局部变量；刷新恢复先把 <code>isStreaming</code> 置 false，使后续按该字段触发的计划收敛无法生效。</p>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Solution</h3>
+                <p class="mt-2 text-sm leading-6">让同一收敛 module 根据运行终态与 Checkpoint 状态产生唯一变更事实，同时驱动广播与快照恢复；审批暂停保持独立语义。</p>
+              </div>
+            </div>
+            <div class="rounded-lg bg-stone-100 px-4 py-3 text-sm"><strong>Deletion test：</strong>异常分支对 <code>currentPlan</code> 的局部收敛没有后续读取或广播；删除它不改变外部结果，说明该 implementation 没有形成有效 interface。</div>
+            <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>locality</strong><br><span class="text-slate-600">终态规则只维护一次</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>leverage</strong><br><span class="text-slate-600">四条路径复用同一事实</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>tests</strong><br><span class="text-slate-600">终态 × 步骤状态表驱动</span></li>
+            </ul>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">不改变 ADR-0038 的 AgentPlan DAG，也不改变 ADR-0041 的 ApprovalResume；只收拢状态收敛。</div>
+          </div>
+        </article>
+
+        <article id="candidate-6" class="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
+          <div class="p-6 sm:p-8 border-b border-stone-200">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">Worth exploring</span>
+              <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-mono">in-process</span>
+              <span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs">/chat</span>
+            </div>
+            <h2 class="font-serif text-3xl">06 · 让 LiveRun 消费语义终态，而非反解 SSE 字节</h2>
+            <div class="file-list mt-5 grid md:grid-cols-2 gap-x-6 gap-y-2 font-mono text-sm text-slate-600">
+              <code>apps/web/src/app/api/chat/_lib/agent/run-stream.ts:13-96</code>
+              <code>apps/web/src/app/api/chat/_lib/agent/run-stream.ts:113-175</code>
+              <code>apps/web/src/app/api/chat/_lib/agent/agent-runner.ts:1039-1104</code>
+              <code>docs/adr/0061-agent-runtime-connection-resilience.md</code>
+            </div>
+          </div>
+          <div class="p-6 sm:p-8 space-y-7">
+            <div class="grid lg:grid-cols-2 gap-5">
+              <div>
+                <p class="diagram-label mb-3">Before · 编排器知道终态，传输实现再猜一次</p>
+                <div class="rounded-xl border border-red-200 bg-red-50/40 p-3">
+                  <pre class="mermaid">
+flowchart LR
+  R[AgentRunner semantic outcome] --> S[SSE bytes]
+  S --> P[Parse done or error]
+  P --> L[LiveRun status]
+  S --> Q[Parse each subscription chunk]
+  Q --> C[Close subscription]
+  R --> F[ChatCompletionLifecycle outcome]
+  P -. vocabulary drift .-> F
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#991b1b;
+  class P,Q leak;
+                  </pre>
+                </div>
+              </div>
+              <div>
+                <p class="diagram-label mb-3">After · 一个终态事实驱动三个消费者</p>
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
+                  <pre class="mermaid">
+flowchart LR
+  R[AgentRunner] --> T[Declared terminal fact]
+  T --> L[LiveRun status and settledAt]
+  T --> E[RunEventLog terminal event]
+  T --> F[ChatCompletionLifecycle]
+  E --> C[Subscription replay and close]
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a,stroke-width:3px;
+  class T deep;
+                  </pre>
+                </div>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Problem</h3>
+                <p class="mt-2 text-sm leading-6"><code>run-stream.ts</code> 通过解析 <code>done/error</code> 推导 LiveRun 终态，订阅实现又按 chunk 解析一次；它与 AgentRunner、ChatCompletionLifecycle 的终态词汇和判定点不同。</p>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase tracking-wider font-bold text-slate-500">Solution</h3>
+                <p class="mt-2 text-sm leading-6">由 AgentRunner 声明唯一终态事实，LiveRun、RunEventLog 与完成生命周期共同消费；传输 implementation 只负责编码与重放，不再拥有业务终态。</p>
+              </div>
+            </div>
+            <div class="rounded-lg bg-stone-100 px-4 py-3 text-sm"><strong>Deletion test：</strong>删除字节反解后，注册表失去终态；能力本身必要，但应移动到已经知道语义终态的 AgentRunner seam。</div>
+            <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>locality</strong><br><span class="text-slate-600">终态词汇集中定义</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>leverage</strong><br><span class="text-slate-600">回收与结算共享事实</span></li>
+              <li class="border-l-2 border-emerald-500 pl-3"><strong>tests</strong><br><span class="text-slate-600">跨 module 终态矩阵可测</span></li>
+            </ul>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">与 ADR-0061 §6 同向：由运行器写入唯一终态并标记 LiveRun。保留进程内 RunEventLog，不引入 Redis、数据库运行态或 seq。</div>
+          </div>
+        </article>
+      </section>
+
+      <section class="grid md:grid-cols-2 gap-5">
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <h2 class="text-sm font-bold text-amber-900">验证盲区 · 实施前先补测试入口</h2>
+          <p class="mt-2 text-sm leading-6 text-amber-900"><code>tooling/eval/__tests__/</code> 不在 <code>apps/web/vitest.config.ts:11</code> 或 <code>packages/shared/vitest.config.ts:5</code> 的收集范围内；根 <code>test:eval</code> 也只指向 Web 的旧评测目录。候选 01 / 04 应先让现有运行器测试进入标准测试命令。</p>
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 class="text-sm font-bold">明确排除 · 不按文件大小重构</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-600"><code>ChatStreamProjector</code>、<code>ChatCompletionLifecycle</code> 已有清晰 interface 与测试 depth；<code>ChatWorkspace</code> 剩余体量主要是展示实现；<code>conversation-orchestrator</code> 整体仍是 ADR-0046 的唯一协调 seam，均不列为独立候选。</p>
+        </div>
+      </section>
+
+      <section id="top-recommendation" class="deep rounded-2xl p-7 sm:p-9 shadow-lg">
+        <p class="text-xs uppercase tracking-[0.22em] text-emerald-300 font-bold">Top recommendation</p>
+        <h2 class="mt-3 font-serif text-3xl sm:text-4xl">先实施候选 01：真实的 Case Executor</h2>
+        <p class="mt-4 max-w-3xl text-slate-200 leading-7">它把真实 Agent 执行与 dry-run 回放放到同一个可测 seam；没有这块 depth，候选 03 的看板与候选 04 的 AblationMatrix 仍只能展示不可验证的数字。</p>
+        <a href="#candidate-1" class="inline-flex mt-6 items-center rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-300 transition-colors">查看候选 01 · 文件与图示 ↑</a>
+      </section>
+    </main>
+  </body>
+</html>

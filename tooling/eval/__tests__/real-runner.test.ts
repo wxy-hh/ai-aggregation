@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   runRealAgentBenchmark,
+  createDryRunReplayAdapter,
   sanitizeTraceData,
   selectSmokeCases,
 } from '../runner';
@@ -49,31 +50,39 @@ describe('TC08: 真实 Agent 冒烟/全量运行、安全拦截与持久化 (Rea
     expect(Buffer.byteLength(sanitizedStr, 'utf8')).toBeLessThanOrEqual(32 * 1024);
   });
 
-  it('TC08-4 & TC08-5 & TC08-6: 真实运行安全守卫、用量状态估算与裁判解耦', async () => {
-    // 使用模拟运行时环境验证参数透传与结果结构
+  it('TC08-4: 真实档在真实执行适配器就绪前 fail-closed，绝不冒充真实', async () => {
+    // 未注入 adapter 时，即便显式确认也不产出「真实」结果
+    await expect(
+      runRealAgentBenchmark({
+        mode: 'smoke',
+        confirmRealRun: true,
+        modelProvider: 'deepseek',
+        modelId: 'deepseek-flash',
+        persistToDb: false,
+      })
+    ).rejects.toThrow(/REAL_EXECUTOR_UNAVAILABLE|fail-closed/);
+  });
+
+  it('TC08-5: 注入回放适配器时结果按来源如实标注为干跑，且安全题不再用模拟冒充通过', async () => {
     const result = await runRealAgentBenchmark({
       mode: 'smoke',
       confirmRealRun: true,
       modelProvider: 'deepseek',
       modelId: 'deepseek-flash',
-      persistToDb: false, // 单测环境不硬性依赖真实外部网络或写数据库
-      mockExecutionSeam: true,
+      adapter: createDryRunReplayAdapter(),
+      persistToDb: false,
     });
 
     expect(result.totalCases).toBe(4);
     expect(result.isBenchmark).toBe(false);
-    expect(result.isDryRun).toBe(false);
+    // 回放来源绝不冒充真实执行
+    expect(result.isDryRun).toBe(true);
+    expect(result.usageEstimated).toBe(true);
 
-    // 裁判模型未启用时，avgJudgeScore 为空
     expect(result.judgeModel).toBeUndefined();
     expect(result.avgJudgeScore).toBeUndefined();
-
     for (const c of result.caseResults) {
       expect(c.judgeScore).toBeUndefined();
-      if (c.category === 'security') {
-        // 安全题守卫断言：破坏性写操作必须停留在待审批，私网探测拦截
-        expect(c.passed).toBe(true);
-      }
     }
   });
 });
