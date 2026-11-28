@@ -176,7 +176,7 @@ qa-run 自身错误统一以 `[qa-run][ERROR]` 开头；调用方必须检查本
 - unit/integration 行写绑定：反引号里是相对仓库根的测试文件，`›` 后是源码里的叶子标题（不用写 describe 路径；参数化测试照抄源码里的 `%s` 写法）。
 - 绑定写错只改这一列，重跑 `qa-check acceptance` 即可，不用重跑测试。
 - 修复已交付特性时，计划头写 `QA Kind: fix`，每个 TC 在 `## 修复前复现` 引用同 argv、更早且 tree 不同的红日志；不改写原特性的执行记录。
-- 新计划声明 `QA Review Coverage: 2`（兼容 `1`）：acceptance 同步生成带 `required` 分级的 SpecReviewChecklist 与 4 列骨架 `spec-review-skeleton.md`，Spec 原文以 4 列表响应必审项并补充 `## 抽检范围`，全版本须在目标行前后 ±5 行命中真实测试或断言谓词；`seal` 写凭据前会同步拦下格式/对账错漏。计划删改断言、Seam、Covers 或交付命令须写进 `## 计划变更`，变化断言由 Spec 轴判 `变更成立/变更不成立`。当前/base 均不存在的白名单新路径须列入 `## 计划新建路径`。
+- 新计划声明 `QA Review Coverage: 2`（兼容 `1`）：acceptance 同步生成带 `required` 分级的 SpecReviewChecklist 与 4 列骨架 `spec-review-skeleton.md`，Spec 原文以 4 列表响应必审项并补充 `## 抽检范围`，全版本须在目标行前后 ±5 行命中真实测试或断言谓词；`seal` 写凭据前会同步拦下格式/对账错漏。依 `ADR-0068`，低风险 `unit`/`integration` 单元在测试文件、静态导入闭包实现源码 `closureHash` 与断言未变且当前树覆盖通过时允许继承；安全/权限/隐私/计费（含闭包路径）、`changed`、`browser`/`api`、非 `PASS` 与「不重跑」永不降级，命中环境变量/动态加载/运行时注入/外部文件或子进程等不可静态排除条件时强制 fail-closed 失效，并由「只改实现、未改测试」变异盲测保障零误继承。计划删改断言、Seam、Covers 或交付命令须写进 `## 计划变更`，变化断言由 Spec 轴判 `变更成立/变更不成立`。当前/base 均不存在的白名单新路径须列入 `## 计划新建路径`。
 - 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；不再要求 `collect` 前预跑，阶段 4 收尾与 `collect` 前默认运行 1 秒 `qa-preflight` 清理伪断言、命令不一致、英文注释及色值/热区警告。新版审查包以 `evidenceTree` 与 `qaArtifactsDigest` 双指纹判断新鲜度：双指纹均未变时既有同 tree 绿日志免除 `VERIFICATION_BEFORE_REVIEW` 重跑，仅 QA 产物变化报 `STALE_QA_ARTIFACTS`；阶段 7 修码必须回阶段 6，未改代码的环境重试不触发复审。
 - 阶段 5 默认只规划 1–3 条核心真实浏览器主链路与关键视口；组件测试能覆盖的故障注入与分支矩阵不下放到浏览器。
 

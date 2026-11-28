@@ -1398,3 +1398,48 @@ test('S3-TC05-1 步骤 3 修改的安装模板不含本仓私货且保留模板�
   assert.match(customTpl, /删除实现步骤型/);
   assert.match(customTpl, /共享强类型契约/);
 });
+
+test('S4-TC04-1 步骤 4 修改的 3 个核心脚本与安装模板逐字节一致、零外部依赖且保持 6 子模块与薄入口上限', async () => {
+  const names = ['qa-check/script-scan.mjs', 'qa-check/spec-coverage.mjs', 'qa-spec-review.mjs'];
+  for (const name of names) {
+    const [tool, template] = await Promise.all([
+      read(`tooling/scripts/${name}`),
+      read(`.claude/skills/setup-qa-workflow/templates/${name}`),
+    ]);
+    assert.equal(template, tool, `${name} 与安装模板不一致`);
+    for (const match of template.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      assert.ok(match[1].startsWith('node:') || match[1].startsWith('.'), `${name} 引入外部依赖 ${match[1]}`);
+    }
+  }
+  const subModules = (await readdir('tooling/scripts/qa-check')).filter((n) => n.endsWith('.mjs')).sort();
+  assert.deepEqual(subModules, ['acceptance.mjs', 'plan.mjs', 'provenance.mjs', 'review-triage.mjs', 'script-scan.mjs', 'spec-coverage.mjs']);
+  const entry = await read('tooling/scripts/qa-check.mjs');
+  assert.ok(entry.split(/\r?\n/).length <= 180);
+});
+
+test('S4-TC04-2 ADR-0068、工作流正本、模板（零私货）、指南与 README 同步静态导入闭包继承与失效条件', async () => {
+  const [adr, workflow, workflowTpl, guide, readme] = await Promise.all([
+    read('docs/adr/0068-qa-review-units-static-closure-inheritance.md'),
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+    read(paths.guide),
+    read('tooling/scripts/README.md'),
+  ]);
+  for (const token of ['ADR-0066', 'eval-real-execution-honest-scoping', 'analyzeStaticImportClosure', 'closureHash', 'closureInvalidationReasons', '环境变量', '只改实现', '变异盲测', '回退']) {
+    assert.match(adr, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  for (const content of [workflow, workflowTpl]) {
+    assert.match(content, /ADR-0068/);
+    assert.match(content, /closureHash|静态导入闭包/);
+    assert.match(content, /永不降级/);
+    assert.match(content, /环境变量/);
+    assert.match(content, /变异盲测/);
+  }
+  assert.doesNotMatch(workflowTpl, /@repo\/web|test_user|AI 聚合平台|pnpm (?:qa:|dev:probe|test:tooling)/);
+  for (const token of ['ADR-0068', 'closureHash', '不可静态排除', '变异盲测']) {
+    assert.match(guide, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  for (const token of ['analyzeStaticImportClosure', 'closureHash', 'closureInvalidationReasons']) {
+    assert.match(readme, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});

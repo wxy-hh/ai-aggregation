@@ -377,6 +377,15 @@ export function parseSpecReviewChecklist(text) {
         || !UNIT_STATUS_VALUES.has(unit.verificationStatus)) {
         throw new Error(`无效 Spec 审查单元：${unit?.unitId ?? '未知 unitId'}`);
       }
+      if (unit.closureHash !== undefined && unit.closureHash !== null
+        && (typeof unit.closureHash !== 'string' || !unit.closureHash.trim())) {
+        throw new Error(`无效 Spec 审查单元 closureHash：${unit.unitId}`);
+      }
+      if (unit.closureInvalidationReasons !== undefined
+        && (!Array.isArray(unit.closureInvalidationReasons)
+          || unit.closureInvalidationReasons.some((item) => typeof item !== 'string'))) {
+        throw new Error(`无效 Spec 审查单元 closureInvalidationReasons：${unit.unitId}`);
+      }
     }
   }
   return value;

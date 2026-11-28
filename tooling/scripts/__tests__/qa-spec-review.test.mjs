@@ -827,3 +827,75 @@ test('S2-TC01-3 isFreshAcceptanceGateLog 区分 PASS、合法 ASSERTION_BLOCKED 
     false,
   );
 });
+
+test('S4-TC02-2 specReviewChecklistDocument 与 parseSpecReviewChecklist 往返校验 closureHash 与 closureInvalidationReasons 并兼容历史清单', async () => {
+  const { specReviewChecklistDocument, parseSpecReviewChecklist } = await import('../qa-spec-review.mjs');
+  const rows = [{
+    id: 'TC01-1',
+    status: 'PASS',
+    assertion: '断言内容',
+    actual: '实测结果',
+    seam: 'unit',
+    sourceCandidates: ['tests/a.test.mjs'],
+    changed: false,
+    priority: 'P0',
+    required: true,
+  }];
+  const reviewUnits = [{
+    unitId: 'unit:tests/a.test.mjs',
+    rowIds: ['TC01-1'],
+    sourceCandidates: ['tests/a.test.mjs'],
+    riskReason: '常规断言',
+    sourceHash: 'a'.repeat(64),
+    evidenceHash: 'b'.repeat(64),
+    assertionHash: 'c'.repeat(64),
+    closureHash: 'd'.repeat(64),
+    verificationStatus: 'required',
+  }, {
+    unitId: 'unit:tests/b.test.mjs',
+    rowIds: ['TC01-1'],
+    sourceCandidates: ['tests/b.test.mjs'],
+    riskReason: '常规断言',
+    sourceHash: 'a'.repeat(64),
+    evidenceHash: 'b'.repeat(64),
+    assertionHash: 'c'.repeat(64),
+    closureHash: null,
+    closureInvalidationReasons: ['tests/b.test.mjs 读取环境变量'],
+    verificationStatus: 'required',
+  }];
+
+  const raw = specReviewChecklistDocument(rows, { version: 2, reviewUnits });
+  const parsed = parseSpecReviewChecklist(raw);
+  assert.equal(parsed.reviewUnits[0].closureHash, 'd'.repeat(64));
+  assert.equal(parsed.reviewUnits[1].closureHash, null);
+  assert.deepEqual(parsed.reviewUnits[1].closureInvalidationReasons, ['tests/b.test.mjs 读取环境变量']);
+
+  // 兼容不含 closureHash 的历史清单
+  const legacyRaw = specReviewChecklistDocument(rows, {
+    version: 2,
+    reviewUnits: [{
+      unitId: 'unit:tests/legacy.test.mjs',
+      rowIds: ['TC01-1'],
+      sourceCandidates: ['tests/legacy.test.mjs'],
+      verificationStatus: 'required',
+    }],
+  });
+  assert.equal(parseSpecReviewChecklist(legacyRaw).reviewUnits[0].closureHash, undefined);
+
+  assert.throws(
+    () => parseSpecReviewChecklist(JSON.stringify({
+      version: 2,
+      rows,
+      reviewUnits: [{ ...reviewUnits[0], closureHash: '' }],
+    })),
+    /closureHash/,
+  );
+  assert.throws(
+    () => parseSpecReviewChecklist(JSON.stringify({
+      version: 2,
+      rows,
+      reviewUnits: [{ ...reviewUnits[0], closureInvalidationReasons: [123] }],
+    })),
+    /closureInvalidationReasons/,
+  );
+});

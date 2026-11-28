@@ -417,7 +417,7 @@ function scanJsSegment(text, start, stopOnCloseBrace = false) {
   return { out, end: index, closed: false };
 }
 
-function stripComments(text, { python = false } = {}) {
+export function stripComments(text, { python = false } = {}) {
   if (!python) return scanJsSegment(text, 0, false).out;
   let out = '';
   let index = 0;
@@ -445,7 +445,7 @@ function stripComments(text, { python = false } = {}) {
   return out;
 }
 
-function inPageSegmentEnd(masked, start) {
+export function inPageSegmentEnd(masked, start) {
   let level = 0;
   for (let index = start; index < masked.length; index += 1) {
     const char = masked[index];
@@ -458,12 +458,45 @@ function inPageSegmentEnd(masked, start) {
   return masked.length;
 }
 
-function maskStringLiterals(text) {
-  let out = '';
-  let index = 0;
+/** 按 1 对 1 索引对齐遮蔽模板字面量正文，但保留 ${...} 插值表达式源码以供动态模式扫描 */
+function maskTemplateLiteral(text, start) {
+  let out = ' ';
+  let index = start + 1;
   while (index < text.length) {
     const char = text[index];
-    if (char === "'" || char === '"' || char === '`') {
+    if (char === '\\') {
+      const slice = text.slice(index, index + 2);
+      out += slice.replace(/[^\n]/g, ' ');
+      index += slice.length;
+      continue;
+    }
+    if (char === '$' && text[index + 1] === '{') {
+      const inner = maskJsRange(text, index + 2, true);
+      out += `  ${inner.out}${inner.closed ? ' ' : ''}`;
+      index = inner.end;
+      continue;
+    }
+    out += char === '\n' ? '\n' : ' ';
+    index += 1;
+    if (char === '`') break;
+  }
+  return { out, end: index };
+}
+
+/** 在保持源码字符索引对齐的前提下遮蔽 JS 字符串、模板正文与正则表达式 */
+function maskJsRange(text, start, stopOnCloseBrace = false) {
+  let out = '';
+  let index = start;
+  let braceDepth = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '`') {
+      const template = maskTemplateLiteral(text, index);
+      out += template.out;
+      index = template.end;
+      continue;
+    }
+    if (char === "'" || char === '"') {
       const end = consumeQuoted(text, index);
       out += text.slice(index, end).replace(/[^\n]/g, ' ');
       index = end;
@@ -475,10 +508,22 @@ function maskStringLiterals(text) {
       index = end;
       continue;
     }
+    if (stopOnCloseBrace) {
+      if (char === '{') {
+        braceDepth += 1;
+      } else if (char === '}') {
+        if (braceDepth === 0) return { out, end: index + 1, closed: true };
+        braceDepth -= 1;
+      }
+    }
     out += char;
     index += 1;
   }
-  return out;
+  return { out, end: index, closed: false };
+}
+
+export function maskStringLiterals(text) {
+  return maskJsRange(text, 0, false).out;
 }
 
 function inPageSegments(text) {
