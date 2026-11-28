@@ -1,16 +1,18 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { QA_DIR, inScope, sha256, sha256FileOrNull } from '../review-package.mjs';
 import {
   SPEC_REVIEW_CHECKLIST_FILE,
   SPEC_REVIEW_CHECKLIST_V2,
   SPEC_REVIEW_CHECKLIST_VERSION,
+  SPEC_REVIEW_SKELETON_FILE,
   SUPPORTED_CHECKLIST_VERSIONS,
   isRequiredSpecRow,
   parseSpecReviewChecklist,
   parseSpecReviewCoverage,
   specReviewChecklistDocument,
   specReviewCoverageIssues,
+  specReviewSkeletonDocument,
 } from '../qa-spec-review.mjs';
 import {
   BOUND_SEAMS,
@@ -274,7 +276,7 @@ export function reconciliationDocument(table) {
 export async function reconciliationIssues(
   featureDir,
   table,
-  { checklistRequired = false, checklistVersion = SPEC_REVIEW_CHECKLIST_VERSION, reviewUnits } = {},
+  { checklistRequired = false, checklistVersion = SPEC_REVIEW_CHECKLIST_VERSION, reviewUnits, evidenceTree, qaPlanDigest } = {},
 ) {
   const issues = [];
   const saved = await readFile(path.join(featureDir, RECONCILIATION_FILE), 'utf8').catch(() => null);
@@ -287,7 +289,23 @@ export async function reconciliationIssues(
     ));
   }
   const savedChecklist = await readFile(path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE), 'utf8').catch(() => null);
-  const expectedChecklist = specReviewChecklistDocument(table, { version: checklistVersion, reviewUnits });
+  let savedEvidenceTree = evidenceTree;
+  if (savedChecklist !== null) {
+    try {
+      const parsedSaved = JSON.parse(savedChecklist);
+      if (typeof parsedSaved?.evidenceTree === 'string' && parsedSaved.evidenceTree) {
+        savedEvidenceTree = parsedSaved.evidenceTree;
+      }
+    } catch {
+      // 解析失败时交由下文字符串比对触发 SPEC_REVIEW_CHECKLIST_STALE
+    }
+  }
+  const expectedChecklist = specReviewChecklistDocument(table, {
+    version: checklistVersion,
+    reviewUnits,
+    evidenceTree: savedEvidenceTree,
+    qaPlanDigest,
+  });
   if ((checklistRequired && savedChecklist === null) || (savedChecklist !== null && savedChecklist !== expectedChecklist)) {
     issues.push(issue(
       'SPEC_REVIEW_CHECKLIST_STALE',
@@ -321,4 +339,43 @@ export async function checkSpecCoverage(context, featureDir, plan, manifest, raw
     notes.push('Spec 对账覆盖：旧审查包没有清单声明，保持人工核对；重新 collect 生成新协议审查包。');
   }
   return { issues, notes };
+}
+
+/** acceptance 阶段：按状态写出或清理对账表、Spec 审查清单与 v2 预填骨架 */
+export async function writeAcceptanceArtifacts(featureDir, report) {
+  const target = path.join(featureDir, RECONCILIATION_FILE);
+  const checklistTarget = path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE);
+  const skeletonTarget = path.join(featureDir, SPEC_REVIEW_SKELETON_FILE);
+  if (!report.table) {
+    await rm(target, { force: true });
+    await rm(checklistTarget, { force: true });
+    await rm(skeletonTarget, { force: true });
+    return;
+  }
+  await mkdir(path.join(featureDir, QA_DIR), { recursive: true });
+  await writeFile(target, reconciliationDocument(report.table));
+  const planText = await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8');
+  const coverageMatch = planText.match(/^QA Review Coverage:\s*(1|2)\s*$/m);
+  const acceptanceCollectable = report.status === 'PASS'
+    || (report.status === 'BLOCKED'
+      && report.issues.length > 0
+      && report.issues.every((item) => item.code === 'ASSERTION_BLOCKED'));
+  if (coverageMatch && acceptanceCollectable) {
+    const checklistVersion = Number(coverageMatch[1]);
+    const checklistJson = specReviewChecklistDocument(report.table, {
+      version: checklistVersion,
+      reviewUnits: report.reviewUnits,
+      evidenceTree: report.evidenceTree,
+      qaPlanDigest: report.qaPlanDigest,
+    });
+    await writeFile(checklistTarget, checklistJson);
+    if (checklistVersion === SPEC_REVIEW_CHECKLIST_V2) {
+      await writeFile(skeletonTarget, specReviewSkeletonDocument(parseSpecReviewChecklist(checklistJson)));
+    } else {
+      await rm(skeletonTarget, { force: true });
+    }
+    return;
+  }
+  await rm(checklistTarget, { force: true });
+  await rm(skeletonTarget, { force: true });
 }

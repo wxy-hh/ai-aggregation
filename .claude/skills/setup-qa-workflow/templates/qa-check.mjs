@@ -1,22 +1,13 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { QA_DIR } from './review-package.mjs';
-import {
-  SPEC_REVIEW_CHECKLIST_FILE,
-  SPEC_REVIEW_CHECKLIST_V2,
-  SPEC_REVIEW_SKELETON_FILE,
-  parseSpecReviewChecklist,
-  specReviewChecklistDocument,
-  specReviewSkeletonDocument,
-  splitMarkdownRow,
-} from './qa-spec-review.mjs';
+import { SPEC_REVIEW_CHECKLIST_V2, computeQaPlanDigest, splitMarkdownRow } from './qa-spec-review.mjs';
 import {
   CURRENT_SCHEMA,
   PHASES,
-  RECONCILIATION_FILE,
   SCRIPTS_DIR,
   deliveryTestDirectoryIssues,
   deriveCaseStatus,
@@ -34,7 +25,7 @@ import {
 } from './qa-check/plan.mjs';
 import { checkAcceptance } from './qa-check/acceptance.mjs';
 import { readReviewRounds, checkReview } from './qa-check/review-triage.mjs';
-import { reconciliationDocument, reconciliationIssues, reconciliationLines } from './qa-check/spec-coverage.mjs';
+import { reconciliationIssues, reconciliationLines, writeAcceptanceArtifacts } from './qa-check/spec-coverage.mjs';
 
 export { CURRENT_SCHEMA, deriveCaseStatus, parsePlan, parseSpec, splitMarkdownRow };
 
@@ -66,18 +57,27 @@ export async function checkFeature(featureDir, phase) {
     return summarize(early.issues, early.notes);
   }
   const context = await featureContext(featureDir);
+  const qaPlanDigest = computeQaPlanDigest(markdown);
   const rounds = phase === 'review' ? await readReviewRounds(featureDir) : null;
   const maxInheritRound = phase === 'review' && rounds?.size ? Math.max(...rounds.keys()) - 1 : Infinity;
   const acceptance = await checkAcceptance(featureDir, plan, context, { maxInheritRound });
   const findings = mergeFindings(planFindings, acceptance, shadow);
   if (phase === 'acceptance') {
-    return { ...summarize(findings.issues, findings.notes), table: acceptance.table, reviewUnits: acceptance.reviewUnits };
+    return {
+      ...summarize(findings.issues, findings.notes),
+      table: acceptance.table,
+      reviewUnits: acceptance.reviewUnits,
+      evidenceTree: context.evidenceTree,
+      qaPlanDigest,
+    };
   }
   const checklistVersion = plan.reviewCoverage === '2' ? SPEC_REVIEW_CHECKLIST_V2 : 1;
   findings.issues.push(...await reconciliationIssues(featureDir, acceptance.table, {
     checklistRequired: plan.reviewCoverage === '1' || plan.reviewCoverage === '2',
     checklistVersion,
     reviewUnits: acceptance.reviewUnits,
+    evidenceTree: context.evidenceTree,
+    qaPlanDigest,
   }));
   return { ...await checkReview(featureDir, plan, context, findings), table: acceptance.table, reviewUnits: acceptance.reviewUnits };
 }
@@ -113,6 +113,13 @@ export function formatReport(report, phase) {
     lines.push(
       `人工决策包（已达自动复审上限 ${report.decisionPack.round}，停止自动修复）`,
       `- 未闭环项：${report.decisionPack.unresolved.join('、') || '见分流表'}`,
+      ...(report.decisionPack.conflicts?.length
+        ? [
+            '- 双轴分歧对照：',
+            ...report.decisionPack.conflicts.map((item) =>
+              `  - ${item.topic} | Standards：${item.standards} | Spec：${item.spec}${item.question ? ` | 待裁决：${item.question}` : ''}`),
+          ]
+        : []),
       `- 追加手动轮次：${report.decisionPack.nextCommand}`,
     );
   }
@@ -134,34 +141,7 @@ async function main() {
   }
   try {
     const report = await checkFeature(featureDir, phase);
-    if (phase === 'acceptance') {
-      const target = path.join(featureDir, RECONCILIATION_FILE);
-      if (report.table) {
-        await mkdir(path.join(featureDir, QA_DIR), { recursive: true });
-        await writeFile(target, reconciliationDocument(report.table));
-        const planText = await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8');
-        const checklistTarget = path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE);
-        const skeletonTarget = path.join(featureDir, SPEC_REVIEW_SKELETON_FILE);
-        const coverageMatch = planText.match(/^QA Review Coverage:\s*(1|2)\s*$/m);
-        if (coverageMatch) {
-          const checklistVersion = Number(coverageMatch[1]);
-          const checklistJson = specReviewChecklistDocument(report.table, { version: checklistVersion, reviewUnits: report.reviewUnits });
-          await writeFile(checklistTarget, checklistJson);
-          if (checklistVersion === SPEC_REVIEW_CHECKLIST_V2) {
-            await writeFile(skeletonTarget, specReviewSkeletonDocument(parseSpecReviewChecklist(checklistJson)));
-          } else {
-            await rm(skeletonTarget, { force: true });
-          }
-        } else {
-          await rm(checklistTarget, { force: true });
-          await rm(skeletonTarget, { force: true });
-        }
-      } else {
-        await rm(target, { force: true });
-        await rm(path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE), { force: true });
-        await rm(path.join(featureDir, SPEC_REVIEW_SKELETON_FILE), { force: true });
-      }
-    }
+    if (phase === 'acceptance') await writeAcceptanceArtifacts(featureDir, report);
     console.log(formatReport(report, phase));
     process.exitCode = report.status === 'PASS' ? 0 : 1;
   } catch (error) {

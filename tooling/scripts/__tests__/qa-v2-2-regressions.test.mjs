@@ -7,9 +7,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkFeature, formatReport } from '../qa-check.mjs';
 import {
+  computeQaPlanDigest,
   parseSpecReviewChecklist,
   specReviewChecklistDocument,
 } from '../qa-spec-review.mjs';
+import { computeEvidenceTreeDigest, readScope } from '../review-package.mjs';
 
 const QA_RUN = fileURLToPath(new URL('../qa-run.mjs', import.meta.url));
 const QA_CHECK = fileURLToPath(new URL('../qa-check.mjs', import.meta.url));
@@ -156,7 +158,7 @@ test('[v2.2-TC03-1] P0-1 collect 生成轻量不可变快照并支持工作区�
     rows: ['| TC01 | 1 | PASS | `screenshots/tc01.png`、`evidence/tc01.log` | | |'],
   }));
 
-  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
+  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
   assert.equal(gateAcc.status, 0, gateAcc.stdout + gateAcc.stderr);
 
   const collected = runCli(REVIEW_PACKAGE, dir, ['collect', feature]);
@@ -210,7 +212,7 @@ test('[v2.2-TC03-2] P0-1 审查途中修改术语、源码或 spec 均触发 SUP
       ],
       rows: ['| TC01 | 1 | PASS | `evidence/unit-01.log` | `tests/app.test.mjs` › 核心函数返回正确 | |'],
     }));
-    assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
+    assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
 
     const targetRound = scenario === 'r1-glossary' ? 'r1' : scenario === 'r2-source' ? 'r2' : 'r4';
     if (scenario !== 'r1-glossary') {
@@ -329,7 +331,7 @@ test('[v2.2-TC04-1] P0-2 qa-run --executor ego-browser --script 通过 stdin 直
     ],
     rows: ['| TC01 | 1 | PASS | `screenshots/tc01.png`、`evidence/tc01-exec.log` | | |'],
   }));
-  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
+  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
   assert.equal(gateAcc.status, 0, gateAcc.stdout + gateAcc.stderr);
   const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
   assert.deepEqual(checklist.rows[0].sourceCandidates, ['scripts/tc01-native.browser.mjs']);
@@ -383,7 +385,7 @@ test('[v2.2-TC04-2] P0-2 SCRIPT_DIR + BROWSER_SCRIPT 变量赋值包装器闭包
     ],
     rows: ['| TC01 | 1 | PASS | `screenshots/tc01.png`、`evidence/tc01-wrap.log` | | |'],
   }));
-  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
+  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
   assert.equal(gateAcc.status, 0, gateAcc.stdout + gateAcc.stderr);
 
   const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
@@ -426,6 +428,27 @@ test('[v2.2-TC04-3] P0-2 collect 2 秒可封存性预检拦截无谓词候选并
   ].join('\n'));
   await writeDeep(path.join(feature, 'screenshots/tc01.png'), PNG_1X1_A);
 
+  const scope = await readScope(feature);
+  const evidenceTree = await computeEvidenceTreeDigest(dir, scope.scopes);
+  const qaPlanDigest = computeQaPlanDigest(await readFile(path.join(feature, 'qa-plan.md'), 'utf8'));
+  await writeDeep(path.join(feature, 'evidence/gate-acceptance-1.log'), [
+    '# qa-run v1',
+    '# label: gate-acceptance-1',
+    `# command: node ${QA_CHECK} acceptance ${feature}`,
+    `# argv: ${JSON.stringify([process.execPath, QA_CHECK, 'acceptance', feature])}`,
+    `# cwd: ${dir}`,
+    '# head: deadbeef',
+    `# tree: ${evidenceTree}`,
+    '# started: 2026-11-28T00:00:00.000Z',
+    '# ---',
+    '结果: PASS',
+    '# ---',
+    '# finished: 2026-11-28T00:00:01.000Z',
+    '# durationMs: 100',
+    '# exit: 0',
+    '',
+  ].join('\n'));
+
   await writeDeep(path.join(feature, '_qa/spec-review-checklist.json'), specReviewChecklistDocument([{
     id: 'TC01-1',
     status: 'PASS',
@@ -435,7 +458,7 @@ test('[v2.2-TC04-3] P0-2 collect 2 秒可封存性预检拦截无谓词候选并
     actual: '仅空壳',
     sourceCandidates: ['scripts/only-shell.sh'],
     changed: false,
-  }], { version: 2 }));
+  }], { version: 2, evidenceTree, qaPlanDigest }));
 
   const startedAt = Date.now();
   const collectBlocked = runCli(REVIEW_PACKAGE, dir, ['collect', feature, '--skip-preflight']);
@@ -456,7 +479,7 @@ test('[v2.2-TC04-3] P0-2 collect 2 秒可封存性预检拦截无谓词候选并
     actual: 'ok',
     sourceCandidates: ['scripts/real.mjs'],
     changed: false,
-  }], { version: 2 }));
+  }], { version: 2, evidenceTree, qaPlanDigest }));
   assert.equal(runCli(REVIEW_PACKAGE, dir, ['collect', feature, '--skip-preflight']).status, 0);
 
   await writeDeep(path.join(feature, 'review/r1-standards.md'), '没有规范编号也没写无结果\n');
@@ -488,7 +511,7 @@ test('[v2.2-TC04-3] P0-2 collect 2 秒可封存性预检拦截无谓词候选并
     actual: 'ok',
     sourceCandidates: [],
     changed: false,
-  }], { version: 2 }));
+  }], { version: 2, evidenceTree, qaPlanDigest }));
   const emptyStarted = Date.now();
   const emptyBlocked = runCli(REVIEW_PACKAGE, dir, ['collect', feature, '--round', 'r2', '--skip-preflight']);
   const emptyElapsed = Date.now() - emptyStarted;
@@ -506,7 +529,7 @@ test('[v2.2-TC04-3] P0-2 collect 2 秒可封存性预检拦截无谓词候选并
     actual: 'ok',
     sourceCandidates: ['scripts/real.mjs'],
     changed: false,
-  }], { version: 2 }));
+  }], { version: 2, evidenceTree, qaPlanDigest }));
   await writeDeep(path.join(feature, '_qa/reconciliation.md'), '# 验收对账表\n\n| 断言 | 状态 | 冻结断言 | 实测值或绑定 | 标记 |\n| --- | --- | --- | --- | --- |\n| TC01-1 | PASS | 断言检查 | ok | 无 |\n');
   const stalePlan = (await readFile(path.join(feature, 'qa-plan.md'), 'utf8')).replace('| TC01 | 1 | BLOCKED | 尚未执行 | | |', '| TC01 | 1 | FAIL | 手改失鲜 | | |');
   await writeFile(path.join(feature, 'qa-plan.md'), stalePlan);
@@ -570,7 +593,7 @@ test('[v2.2-TC05-1] P0-3 Coverage 2 平滑扩展分组 reviewUnits 且兼容旧 
       '| TC01 | 2 | PASS | `screenshots/tc01.png`、`evidence/tc01.log` | | |',
     ],
   }));
-  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
+  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
   assert.equal(gateAcc.status, 0, gateAcc.stdout + gateAcc.stderr);
 
   const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
@@ -638,7 +661,7 @@ test('[v2.2-TC05-2] P0-3 未实质改动源码的存量回归标 sampled，高�
     ],
   }));
 
-  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
+  const gateAcc = runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
   assert.equal(gateAcc.status, 0, gateAcc.stdout + gateAcc.stderr);
   const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
   const tc01Row = checklist.rows.find((row) => row.id === 'TC01-1');
@@ -688,7 +711,7 @@ test('[v2.2-TC05-3] P0-3 r2 未变化 reviewUnit 自动 inherited，修改 1 个
       '| TC02 | 1 | PASS | `screenshots/tc02.png`、`evidence/tc02.log` | | |',
     ],
   }));
-  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
+  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
   assert.equal(runCli(REVIEW_PACKAGE, dir, ['collect', feature, '--round', 'r1']).status, 0);
 
   await writeDeep(path.join(feature, 'review/r1-standards.md'), '无发现\n');
@@ -718,7 +741,7 @@ test('[v2.2-TC05-3] P0-3 r2 未变化 reviewUnit 自动 inherited，修改 1 个
       '| TC02 | 1 | PASS | `screenshots/tc02.png`、`evidence/tc02-r2.log` | | |',
     ],
   }));
-  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acc-02', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
+  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acceptance-02', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
 
   const r2Checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
   const u1 = r2Checklist.reviewUnits.find((unit) => unit.rowIds.includes('TC01-1'));
@@ -767,7 +790,7 @@ test('[v2.2-P2-TC04-4] 截图三要素未变才允许继承，任一变化精准
     assert.equal(runCli(QA_RUN, dir, [feature, 'tc01', '--script', path.join(feature, 'scripts/tc01.mjs')]).status, 0);
     const rows = ['| TC01 | 1 | PASS | `screenshots/tc01.png`、`evidence/tc01.log` | | |'];
     await writeFile(path.join(feature, 'qa-plan.md'), buildPlan({ cases, rows }));
-    assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acc-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
+    assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
     assert.equal(runCli(REVIEW_PACKAGE, dir, ['collect', feature, '--round', 'r1']).status, 0);
     await writeDeep(path.join(feature, 'review/r1-standards.md'), '无发现\n');
     await writeDeep(path.join(feature, 'review/r1-spec-axis.md'), [
@@ -794,7 +817,7 @@ test('[v2.2-P2-TC04-4] 截图三要素未变才允许继承，任一变化精准
         ? '- TC01：断言语义变化，重新核验目标像素。'
         : '- 无';
     await writeFile(path.join(feature, 'qa-plan.md'), buildPlan({ cases: changedCases, rows, changes }));
-    const r2 = runCli(QA_RUN, dir, [feature, 'gate-acc-02', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
+    const r2 = runCli(QA_RUN, dir, [feature, 'gate-acceptance-02', '--', process.execPath, QA_CHECK, 'acceptance', feature]);
     assert.equal(r2.status, 0, `${variant}: ${r2.stdout}${r2.stderr}`);
     const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
     const unit = checklist.reviewUnits.find((item) => item.rowIds.includes('TC01-1'));
@@ -1045,7 +1068,7 @@ test('[v2.2-P2-TC09-1] OBS-1 collect 与 seal 写入可机读度量字段', asyn
     cases: ['### TC01: 核心流程验证', '- Priority: P0', '- Covers: 1', '- Seam: unit', '', '#### 验证断言', '1. 核心函数返回值符合预期'],
     rows: ['| TC01 | 1 | PASS | `evidence/unit-obs.log` | `tests/app.test.mjs` › 核心函数返回正确 | |'],
   }));
-  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-obs', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
+  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acceptance-obs', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
   assert.equal(runCli(REVIEW_PACKAGE, dir, ['collect', feature]).status, 0);
 
   const challengePath = path.join(feature, '_qa/review-challenge.json');
@@ -1155,4 +1178,146 @@ test('[v2.2-P2-TC09-3] OBS-1 新字段不破坏旧审查包与模板兼容', asy
     ]);
     assert.equal(template, tool, `${name} 与模板不一致`);
   }
+});
+
+test('S2-TC04-1 WAITING_HUMAN 仅按白名单更新交付验证与双轴分歧对照时不自造失鲜或未验证错误', async (t) => {
+  const { dir, feature } = await setupFeatureRepo(t, {
+    scopePaths: ['src/app.js'],
+    cases: ['### TC01: 核心验证', '- Priority: P0', '- Covers: 1', '- Seam: unit', '#### 验证断言', '1. 返回值符合预期'],
+  });
+  await writeFile(path.join(dir, 'src/app.js'), 'export const value = 2;\n');
+  assert.equal(runCli(QA_RUN, dir, [feature, 'unit-01', '--', process.execPath, '--test', 'tests/app.test.mjs']).status, 0);
+  const initialPlan = buildPlan({
+    cases: ['### TC01: 核心验证', '- Priority: P0', '- Covers: 1', '- Seam: unit', '#### 验证断言', '1. 返回值符合预期'],
+    rows: ['| TC01 | 1 | PASS | `evidence/unit-01.log` | `tests/app.test.mjs` › 核心函数返回正确 | |'],
+    delivery: '`node --version` | 待执行',
+  });
+  await writeFile(path.join(feature, 'qa-plan.md'), initialPlan);
+  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
+  assert.equal(runCli(REVIEW_PACKAGE, dir, ['collect', feature, '--round', 'r2']).status, 0);
+
+  await writeDeep(path.join(feature, 'review/r1-standards.md'), '[S-H6] 空工具集不应声明工具能力\n');
+  await writeDeep(path.join(feature, 'review/r1-spec-axis.md'), [
+    '无发现',
+    '',
+    '## 对账覆盖',
+    '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- |',
+    '| TC01-1 | 已核实 | `tests/app.test.mjs:4` `assert.equal(1, 1)` | 不适用 |',
+    '',
+  ].join('\n'));
+  await writeDeep(path.join(feature, 'review/r2-standards.md'), '[S-H6] 已修\n');
+  await writeDeep(path.join(feature, 'review/r2-spec-axis.md'), [
+    '## [P-M7] 移除 plan_created 使规划题整体降为未评分',
+    '',
+    '## 对账覆盖',
+    '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- |',
+    '| TC01-1 | 已核实 | `tests/app.test.mjs:4` `assert.equal(1, 1)` | 不适用 |',
+    '',
+  ].join('\n'));
+  for (const [axis, file, extra] of [
+    ['standards', 'review/r2-standards.md', ['--pending-ids', 'S-H6']],
+    ['spec', 'review/r2-spec-axis.md', []],
+  ]) {
+    assert.equal(runCli(REVIEW_PACKAGE, dir, [
+      'seal', feature, '--round', 'r2', '--axis', axis, '--file', file,
+      '--reviewer-kind', 'external-session', '--host', 'Kimi Code', ...extra,
+    ]).status, 0);
+  }
+
+  // WAITING_HUMAN 白名单收口：跑交付命令后仅回填 ## 交付验证，并更新 review-report.md 与双轴分歧对照
+  assert.equal(runCli(QA_RUN, dir, [feature, 'delivery', '--', 'node', '--version']).status, 0);
+  await writeFile(path.join(feature, 'qa-plan.md'), initialPlan.replace('待执行', '`evidence/delivery.log`'));
+  await writeFile(path.join(feature, 'review-report.md'), [
+    '审查方式：宿主=Kimi Code；双轴外部独立会话',
+    '',
+    '## 三档分流',
+    '| 编号 | 档位 | 处置状态 | 轮次轨迹 | 验证证据 | 理由 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| S-H6 | 本次修 | 已修 | r1 → r2 已修 | 静态：已在 r2 确认工具能力边界 | |',
+    '| P-M7 | 本次修 | 未修 | r2 | | 停在 WAITING_HUMAN 交人工裁决 |',
+    '',
+    '## 双轴分歧对照',
+    '| 编号 | Standards 轴结论与依据 | Spec 轴结论与依据 | 待人工裁决问题 |',
+    '| --- | --- | --- | --- |',
+    '| S-H6 / P-M7 | S-H6 已修：空工具集不应声明工具能力 | P-M7 未修：移除 plan_created 使 10 道规划题未评分 | 按 US 10 裁决规划能力是否独立保留 |',
+    '',
+  ].join('\n'));
+
+  const report = await checkFeature(feature, 'review');
+  const rendered = formatReport(report, 'review');
+  const issueCodes = new Set(report.issues.map((item) => item.code));
+  assert.equal(report.status, 'BLOCKED', rendered);
+  assert.equal(report.pauseState, 'WAITING_HUMAN', rendered);
+  assert.ok(!issueCodes.has('STALE_QA_ARTIFACTS'), rendered);
+  assert.ok(!issueCodes.has('SUPERSEDED'), rendered);
+  assert.ok(!issueCodes.has('FIX_UNVERIFIED'), rendered);
+  assert.match(rendered, /双轴分歧对照/);
+  assert.match(rendered, /S-H6 \/ P-M7/);
+  assert.match(rendered, /空工具集不应声明工具能力/);
+  assert.match(rendered, /移除 plan_created 使 10 道规划题未评分/);
+});
+
+test('S2-TC04-2 最新轮次首次提出且未经后续复审的发现错标已修时报 UNREVIEWED_FIX_CLAIM 且保留在决策包未闭环项', async (t) => {
+  const { dir, feature } = await setupFeatureRepo(t, {
+    scopePaths: ['src/app.js'],
+    cases: ['### TC01: 核心验证', '- Priority: P0', '- Covers: 1', '- Seam: unit', '#### 验证断言', '1. 返回值符合预期'],
+  });
+  await writeFile(path.join(dir, 'src/app.js'), 'export const value = 2;\n');
+  assert.equal(runCli(QA_RUN, dir, [feature, 'unit-01', '--', process.execPath, '--test', 'tests/app.test.mjs']).status, 0);
+  await writeFile(path.join(feature, 'qa-plan.md'), buildPlan({
+    cases: ['### TC01: 核心验证', '- Priority: P0', '- Covers: 1', '- Seam: unit', '#### 验证断言', '1. 返回值符合预期'],
+    rows: ['| TC01 | 1 | PASS | `evidence/unit-01.log` | `tests/app.test.mjs` › 核心函数返回正确 | |'],
+  }));
+  assert.equal(runCli(QA_RUN, dir, [feature, 'gate-acceptance-01', '--', process.execPath, QA_CHECK, 'acceptance', feature]).status, 0);
+  assert.equal(runCli(REVIEW_PACKAGE, dir, ['collect', feature, '--round', 'r2']).status, 0);
+
+  await writeDeep(path.join(feature, 'review/r1-standards.md'), '[S-H1] 首轮缺陷\n');
+  await writeDeep(path.join(feature, 'review/r1-spec-axis.md'), [
+    '无发现',
+    '',
+    '## 对账覆盖',
+    '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- |',
+    '| TC01-1 | 已核实 | `tests/app.test.mjs:4` `assert.equal(1, 1)` | 不适用 |',
+    '',
+  ].join('\n'));
+  await writeDeep(path.join(feature, 'review/r2-standards.md'), '[S-H1] 已修\n\n## [S-H7] r2 才首次提出的新增缺陷\n');
+  await writeDeep(path.join(feature, 'review/r2-spec-axis.md'), [
+    '无发现',
+    '',
+    '## 对账覆盖',
+    '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- |',
+    '| TC01-1 | 已核实 | `tests/app.test.mjs:4` `assert.equal(1, 1)` | 不适用 |',
+    '',
+  ].join('\n'));
+  for (const [axis, file, extra] of [
+    ['standards', 'review/r2-standards.md', ['--pending-ids', 'S-H1']],
+    ['spec', 'review/r2-spec-axis.md', []],
+  ]) {
+    assert.equal(runCli(REVIEW_PACKAGE, dir, [
+      'seal', feature, '--round', 'r2', '--axis', axis, '--file', file,
+      '--reviewer-kind', 'external-session', '--host', 'Kimi Code', ...extra,
+    ]).status, 0);
+  }
+  assert.equal(runCli(QA_RUN, dir, [feature, 'delivery', '--', 'node', '--version']).status, 0);
+  await writeFile(path.join(feature, 'review-report.md'), [
+    '审查方式：宿主=Kimi Code；双轴外部独立会话',
+    '',
+    '## 三档分流',
+    '| 编号 | 档位 | 处置状态 | 轮次轨迹 | 验证证据 | 理由 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| S-H1 | 本次修 | 已修 | r1 → r2 已修 | 静态：已在 r2 确认 | |',
+    '| S-H7 | 本次修 | 已修 | r2 | 静态：未复审直接标已修 | |',
+    '',
+  ].join('\n'));
+
+  const report = await checkFeature(feature, 'review');
+  const rendered = formatReport(report, 'review');
+  assert.equal(report.status, 'BLOCKED', rendered);
+  assert.equal(report.pauseState, 'WAITING_HUMAN', rendered);
+  assert.ok(report.issues.some((item) => item.code === 'UNREVIEWED_FIX_CLAIM' && item.severity === 'BLOCKED'), rendered);
+  assert.match(rendered, /人工决策包[\s\S]*未闭环项：[^\n]*S-H7/);
 });

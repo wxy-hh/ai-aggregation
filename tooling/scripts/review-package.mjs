@@ -21,13 +21,20 @@ import {
   SPEC_REVIEW_CHECKLIST_FILE,
   SPEC_REVIEW_CHECKLIST_V2,
   SPEC_REVIEW_SKELETON_FILE,
+  computeQaPlanDigest,
   hasPredicateInText,
+  isAcceptanceGateRunLog,
+  isFreshAcceptanceGateLog,
   parseFindingDefinitions,
+  parseRunLog,
   parseSpecReviewChecklist,
   parseSpecReviewCoverage,
   splitMarkdownRow,
+  stripDeliverySection,
   validateReviewReportForSeal,
 } from './qa-spec-review.mjs';
+
+export { stripDeliverySection };
 import { formatPreflightReport, runPreflight } from './qa-preflight.mjs';
 
 const MAX_TEXT_SIZE = 512 * 1024;
@@ -207,16 +214,6 @@ export function isNonContractDoc(relative) {
 /** 行为证据树：用于 qa-run 日志、STALE_EVIDENCE 与 STALE_VERIFICATION */
 export function computeEvidenceTreeDigest(repo, scopes) {
   return computeTreeDigest(repo, scopes, { exclude: isNonContractDoc });
-}
-
-/** 从 qa-plan.md 中剔除 ## 交付验证 段落，避免阶段 7 回填日志路径自触发过期 */
-export function stripDeliverySection(markdown) {
-  const lines = String(markdown ?? '').split(/\r?\n/);
-  const start = lines.findIndex((line) => /^## 交付验证\s*$/.test(line));
-  if (start < 0) return String(markdown ?? '');
-  const end = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
-  const kept = [...lines.slice(0, start), ...(end < 0 ? [] : lines.slice(end))];
-  return kept.join('\n');
 }
 
 /** 计算特性目录内受审 QA 产物摘要（scripts/、screenshots/ 及剔除交付验证段的 qa-plan.md） */
@@ -859,15 +856,80 @@ function markdownTableRows(markdown, headingPattern, firstCellExcludes) {
   return out;
 }
 
-/** 轻量可封存性预检：2 秒内提前拦下缺失/无谓词候选或关键 QA 产物失鲜的问题，归为 PACKAGE_INVALID */
-async function checkSealability(root, featureDir) {
+/** 按开始时间、结束时间与自然文件名升序比较两条门禁日志，确保末尾即为最新一条 */
+function compareGateLogs(left, right) {
+  const timeOf = (value) => {
+    const ms = Date.parse(value ?? '');
+    return Number.isFinite(ms) ? ms : -Infinity;
+  };
+  const startedDiff = timeOf(left.log.started) - timeOf(right.log.started);
+  if (startedDiff !== 0) return startedDiff;
+  const finishedDiff = timeOf(left.log.finished) - timeOf(right.log.finished);
+  if (finishedDiff !== 0) return finishedDiff;
+  return left.name.localeCompare(right.name, 'en', { numeric: true });
+}
+
+/** 轻量可封存性预检：2 秒内只读核对摘要与最新同树验收门禁，提前拦下缺失/失鲜产物或无谓词候选，归为 PACKAGE_INVALID */
+async function checkSealability(root, featureDir, scope) {
+  const planRaw = await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8').catch(() => '');
+  const coverageDeclared = /^QA Review Coverage:\s*(?:1|2)\s*$/m.test(planRaw);
   const checklistPath = path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE);
-  if (!await fileExists(checklistPath)) return;
+  const hasChecklist = await fileExists(checklistPath);
+  if (!hasChecklist) {
+    if (coverageDeclared) {
+      throw typedError(
+        'PACKAGE_INVALID',
+        '计划声明了 QA Review Coverage，但缺少 _qa/spec-review-checklist.json；请先运行 qa-check acceptance 再 collect',
+      );
+    }
+    return;
+  }
   let checklist;
   try {
     checklist = parseSpecReviewChecklist(await readFile(checklistPath, 'utf8'));
   } catch (error) {
     throw typedError('PACKAGE_INVALID', `Spec 审查清单不可用，collect 已阻断：${error.message}`);
+  }
+
+  // 只读新鲜度预检：校验清单中的 evidenceTree、qaPlanDigest 与最新一条同树 gate-acceptance-*.log
+  const expectedEvidenceTree = scope ? await computeEvidenceTreeDigest(root, scope.scopes) : null;
+  const expectedPlanDigest = computeQaPlanDigest(planRaw);
+  if (!checklist.evidenceTree || !checklist.qaPlanDigest) {
+    throw typedError(
+      'PACKAGE_INVALID',
+      'Spec 审查清单缺少新鲜度摘要（evidenceTree / qaPlanDigest）；请先重跑 qa-check acceptance 再 collect',
+    );
+  }
+  if (expectedEvidenceTree && checklist.evidenceTree !== expectedEvidenceTree) {
+    throw typedError(
+      'PACKAGE_INVALID',
+      'Spec 审查清单的 evidenceTree 与当前代码不一致；请先重跑 qa-check acceptance 再 collect',
+    );
+  }
+  if (checklist.qaPlanDigest !== expectedPlanDigest) {
+    throw typedError(
+      'PACKAGE_INVALID',
+      'Spec 审查清单的 qaPlanDigest 与当前 qa-plan.md（非交付验证段）不一致；请先重跑 qa-check acceptance 再 collect',
+    );
+  }
+  const evidenceEntries = await readdir(path.join(featureDir, 'evidence')).catch(() => []);
+  const gateFiles = evidenceEntries.filter((name) => /^gate-acceptance-.*\.log$/.test(name));
+  const checkTree = expectedEvidenceTree || checklist.evidenceTree;
+  const acceptanceLogs = [];
+  for (const name of gateFiles) {
+    const logText = await readFile(path.join(featureDir, 'evidence', name), 'utf8').catch(() => '');
+    const parsedLog = parseRunLog(logText);
+    if (isAcceptanceGateRunLog(parsedLog)) {
+      acceptanceLogs.push({ name, log: parsedLog });
+    }
+  }
+  acceptanceLogs.sort(compareGateLogs);
+  const latestGate = acceptanceLogs.at(-1)?.log ?? null;
+  if (!latestGate || !isFreshAcceptanceGateLog(latestGate, checkTree)) {
+    throw typedError(
+      'PACKAGE_INVALID',
+      '最新 gate-acceptance-*.log 缺失、已过期或验收未通过；请先重新运行 qa-check acceptance 再 collect',
+    );
   }
 
   // 若已生成对账表，预检 qa-plan 执行记录、对账表与审查清单状态是否同步，提前拦下失鲜产物
@@ -1185,8 +1247,8 @@ async function collectReviewPackage(
       throw new Error('PREFLIGHT_FAILED：静态预检命中 ERROR，collect 已阻断；请先修复或按需传入 --skip-preflight 应急跳过。');
     }
   }
-  // 可封存性 2 秒预检始终运行，避免打包出必然在 seal 失败的审查包
-  await checkSealability(root, feature);
+  // 可封存性 2 秒只读预检始终运行，避免打包出旧验收或必然在 seal 失败的审查包
+  await checkSealability(root, feature, scope);
 
   const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
   const beforeFiles = await snapshotFiles(snapshotRoot);
@@ -1461,6 +1523,16 @@ async function scaffoldReport(repo, argument, args) {
   }
   if (defaultRejects.length) {
     lines.push('', '## 默认驳回', ...defaultRejects);
+  }
+  const hasStandards = [...historical.records.keys()].some((id) => id.startsWith('S-'));
+  const hasSpec = [...historical.records.keys()].some((id) => id.startsWith('P-'));
+  if (hasStandards && hasSpec) {
+    lines.push(
+      '',
+      '## 双轴分歧对照',
+      '> 两轴对同一问题结论或前提冲突时，用下表并列呈现两轴依据与待人工裁决问题；无分歧时写「无」',
+      '无',
+    );
   }
   lines.push('');
   await writeFile(reportPath, lines.join('\n'));

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -126,10 +127,122 @@ export function isRequiredSpecRow(row) {
 
 const UNIT_STATUS_VALUES = new Set(['required', 'sampled', 'inherited']);
 
-/** 由对账表内部行生成稳定、可移植的 Spec 审查清单（支持 v1 与 v2，并可选附加分组 reviewUnits） */
+/** 从 qa-plan.md 中剔除 ## 交付验证 段落，避免阶段 7 回填日志路径自触发过期 */
+export function stripDeliverySection(markdown) {
+  const lines = String(markdown ?? '').split(/\r?\n/);
+  const start = lines.findIndex((line) => /^## 交付验证\s*$/.test(line));
+  if (start < 0) return String(markdown ?? '');
+  const end = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
+  const kept = [...lines.slice(0, start), ...(end < 0 ? [] : lines.slice(end))];
+  return kept.join('\n');
+}
+
+/** 计算剔除 ## 交付验证 后的 qa-plan.md SHA-256 摘要 */
+export function computeQaPlanDigest(markdown) {
+  return createHash('sha256').update(stripDeliverySection(markdown), 'utf8').digest('hex');
+}
+
+/** 解析 qa-run v1 日志文件头尾字段与命令输出正文 */
+export function parseRunLog(text) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  if (lines[0] !== '# qa-run v1') return null;
+  const fields = {};
+  let headerEnd = -1;
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index] === '# ---') {
+      headerEnd = index;
+      break;
+    }
+    const match = lines[index].match(/^# ([A-Za-z][A-Za-z0-9]*): (.*)$/);
+    if (match) fields[match[1]] = match[2];
+  }
+
+  let argv = null;
+  try {
+    const parsed = JSON.parse(fields.argv ?? '');
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) argv = parsed;
+  } catch {
+    argv = null;
+  }
+
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === '') end -= 1;
+  let tailStart = -1;
+  for (let index = end - 1; index > headerEnd; index -= 1) {
+    if (lines[index] === '# ---') {
+      tailStart = index;
+      break;
+    }
+  }
+  const tail = {};
+  if (tailStart > headerEnd) {
+    for (const line of lines.slice(tailStart + 1, end)) {
+      const match = line.match(/^# ([A-Za-z][A-Za-z0-9]*): (.*)$/);
+      if (match) tail[match[1]] = match[2];
+    }
+  }
+  const finished = tail.finished ?? null;
+  const exit = tail.exit === undefined ? null : /^\d+$/.test(tail.exit) ? Number(tail.exit) : tail.exit;
+  const complete = headerEnd > 0 && argv !== null && finished !== null && exit !== null;
+  const durationMs = Number(tail.durationMs);
+  const repairAndWaitMs = Number(tail.repairAndWaitMs);
+  return {
+    label: fields.label ?? null,
+    command: fields.command ?? null,
+    argv,
+    executor: fields.executor ?? null,
+    script: fields.script ?? null,
+    cwd: fields.cwd ?? null,
+    head: fields.head ?? null,
+    node: fields.node ?? null,
+    tree: fields.tree ?? null,
+    nonce: fields.nonce ?? null,
+    round: fields.round ?? null,
+    axis: fields.axis ?? null,
+    snapshotHash: fields.snapshotHash ?? null,
+    started: fields.started ?? null,
+    finished,
+    dispatchedAt: null,
+    terminalState: tail.terminalState ?? null,
+    errorClass: tail.errorClass === 'none' ? null : tail.errorClass ?? null,
+    durationMs: Number.isInteger(durationMs) && durationMs >= 0 ? durationMs : null,
+    repairAndWaitMs: Number.isInteger(repairAndWaitMs) && repairAndWaitMs >= 0 ? repairAndWaitMs : null,
+    exit,
+    complete,
+    // 命令输出正文（不含头尾），供断言标记核对
+    body: lines.slice(headerEnd > 0 ? headerEnd + 1 : lines.length, tailStart > headerEnd ? tailStart : end).join('\n'),
+  };
+}
+
+/** 判断日志是否为完整的 qa-check acceptance 门禁日志 */
+export function isAcceptanceGateRunLog(log) {
+  return Boolean(
+    log?.complete
+    && Array.isArray(log.argv)
+    && log.argv.length >= 3
+    && path.basename(log.argv[0]) === 'node'
+    && path.basename(log.argv[1] ?? '') === 'qa-check.mjs'
+    && log.argv[2] === 'acceptance',
+  );
+}
+
+/** 校验 gate-acceptance-* 日志是否完整、匹配当前行为树，并判定 PASS 或合法 ASSERTION_BLOCKED */
+export function isFreshAcceptanceGateLog(log, expectedTree, { allowAssertionBlocked = true } = {}) {
+  if (!isAcceptanceGateRunLog(log)) return false;
+  if (typeof expectedTree !== 'string' || !expectedTree || log.tree !== expectedTree) return false;
+  const body = String(log.body ?? '');
+  const resultMatch = body.match(/^结果:\s*(\S+)\s*$/m);
+  if (log.exit === 0) return !resultMatch || resultMatch[1] === 'PASS';
+  if (!allowAssertionBlocked || resultMatch?.[1] !== 'BLOCKED') return false;
+  const reasonMatch = body.match(/^阻塞原因[：:]\s*(.+)$/m);
+  const codes = reasonMatch ? reasonMatch[1].split(/[、,，\s]+/).map((item) => item.trim()).filter(Boolean) : [];
+  return codes.length > 0 && codes.every((code) => code === 'ASSERTION_BLOCKED');
+}
+
+/** 由对账表内部行生成稳定、可移植的 Spec 审查清单（支持 v1 与 v2，并可选附加分组 reviewUnits 与新鲜度摘要） */
 export function specReviewChecklistDocument(
   table,
-  { version = SPEC_REVIEW_CHECKLIST_VERSION, reviewUnits } = {},
+  { version = SPEC_REVIEW_CHECKLIST_VERSION, reviewUnits, evidenceTree, qaPlanDigest } = {},
 ) {
   if (!SUPPORTED_CHECKLIST_VERSIONS.has(version)) {
     throw new Error(`不支持的 Spec 审查清单版本：${version}`);
@@ -154,7 +267,13 @@ export function specReviewChecklistDocument(
     }
     return base;
   });
-  const payload = Array.isArray(reviewUnits) ? { version, rows, reviewUnits } : { version, rows };
+  const payload = {
+    version,
+    ...(typeof evidenceTree === 'string' && evidenceTree ? { evidenceTree } : {}),
+    ...(typeof qaPlanDigest === 'string' && qaPlanDigest ? { qaPlanDigest } : {}),
+    rows,
+    ...(Array.isArray(reviewUnits) ? { reviewUnits } : {}),
+  };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
@@ -229,6 +348,12 @@ export function parseSpecReviewChecklist(text) {
   }
   if (!SUPPORTED_CHECKLIST_VERSIONS.has(value?.version) || !Array.isArray(value.rows)) {
     throw new Error('无效 Spec 审查清单：version 必须为 1 或 2 且 rows 必须为数组');
+  }
+  if (value.evidenceTree !== undefined && (typeof value.evidenceTree !== 'string' || !value.evidenceTree.trim())) {
+    throw new Error('无效 Spec 审查清单：evidenceTree 必须为非空字符串');
+  }
+  if (value.qaPlanDigest !== undefined && (typeof value.qaPlanDigest !== 'string' || !value.qaPlanDigest.trim())) {
+    throw new Error('无效 Spec 审查清单：qaPlanDigest 必须为非空字符串');
   }
   for (const row of value.rows) {
     if (!row || !CASE_ASSERTION_ID.test(row.id) || typeof row.actual !== 'string'

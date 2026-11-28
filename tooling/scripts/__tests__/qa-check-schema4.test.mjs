@@ -280,8 +280,13 @@ async function reviewRepo(t, {
     });
     assert.equal(executed.status, expected, executed.stderr);
   }
-  // 按正确时序先 acceptance 落盘对账表，再 collect
-  spawnSync(process.execPath, [QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
+  // 按正确时序先 acceptance 落盘对账表，再 collect；声明 Coverage 时经 qa-run 留存门禁日志
+  if (/^QA Review Coverage:\s*(?:1|2)\s*$/m.test(plan)) {
+    const gated = spawnSync(process.execPath, [QA_RUN, feature, 'gate-acceptance-0', '--', process.execPath, QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
+    assert.equal(gated.status, 0, gated.stderr + gated.stdout);
+  } else {
+    spawnSync(process.execPath, [QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
+  }
   const collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature], {
     cwd: dir,
     encoding: 'utf8',

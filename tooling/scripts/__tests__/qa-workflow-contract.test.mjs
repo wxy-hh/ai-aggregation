@@ -1186,3 +1186,65 @@ test('TC07-2 审查格式错误处理与 startedAt 指引同步', async () => {
   assert.match(guide, /旧日志/);
   assert.match(readme, /startedAt[\s\S]*不冒称模型真实派发、开始工作或推理时长/);
 });
+
+test('S2-TC05-1 步骤 2 修改的全部核心脚本与安装模板逐字节一致且无外部依赖', async () => {
+  const names = [
+    'qa-spec-review.mjs',
+    'qa-run.mjs',
+    'qa-check.mjs',
+    'review-package.mjs',
+    'qa-check/spec-coverage.mjs',
+    'qa-check/review-triage.mjs',
+  ];
+  for (const name of names) {
+    const [tool, template] = await Promise.all([
+      read(`tooling/scripts/${name}`),
+      read(`.claude/skills/setup-qa-workflow/templates/${name}`),
+    ]);
+    assert.equal(template, tool, `${name} 与安装模板不一致`);
+    for (const match of template.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      assert.ok(match[1].startsWith('node:') || match[1].startsWith('.'), `${name} 引入外部依赖 ${match[1]}`);
+    }
+  }
+});
+
+test('S2-TC05-2 工作流正本指南技能与说明同步新鲜度预检 WAITING_HUMAN 停手白名单双轴分歧与真源认领', async () => {
+  const [workflow, workflowTemplate, guide, reviewSkill, implementSkill, customizations, readme] = await Promise.all([
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+    read(paths.guide),
+    read('.claude/skills/code-review/SKILL.md'),
+    read(paths.implement),
+    read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md'),
+    read('tooling/scripts/README.md'),
+  ]);
+
+  for (const text of [workflow, workflowTemplate]) {
+    assert.match(text, /evidenceTree/);
+    assert.match(text, /qaPlanDigest/);
+    assert.match(text, /ASSERTION_BLOCKED/);
+    assert.match(text, /不在 `collect`[^\n]*重跑/);
+    assert.match(text, /WAITING_HUMAN[^\n]*白名单|停手白名单/);
+    assert.match(text, /双轴分歧对照/);
+    assert.match(text, /UNREVIEWED_FIX_CLAIM/);
+    assert.match(text, /\.source\.json[^\n]*哈希|SHA-256/);
+  }
+  assert.match(guide, /evidenceTree/);
+  assert.match(guide, /ASSERTION_BLOCKED/);
+  assert.match(guide, /停手白名单/);
+  assert.match(guide, /双轴分歧对照/);
+  assert.match(guide, /UNREVIEWED_FIX_CLAIM/);
+  assert.match(guide, /\.source\.json/);
+
+  for (const text of [reviewSkill, customizations]) {
+    assert.match(text, /\.source\.json[^\n]*(?:哈希|SHA-256)[^\n]*真源/);
+    assert.match(text, /禁止重派/);
+  }
+  for (const text of [implementSkill, customizations]) {
+    assert.match(text, /WAITING_HUMAN[^\n]*停手白名单/);
+    assert.match(text, /双轴分歧对照/);
+  }
+  for (const token of ['evidenceTree', 'qaPlanDigest', 'isFreshAcceptanceGateLog', 'UNREVIEWED_FIX_CLAIM', '双轴分歧对照']) {
+    assert.match(readme, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});

@@ -245,12 +245,13 @@ await browser.close();
 
 **审查来源凭据怎么用**：
 
-1. `collect` 把轮次、nonce、treeDigest 与打包时间写入 `_qa/review-challenge.json`。需要显式开新一轮时用 `--round r<n>`；再次 collect 会换 nonce，旧凭据不能用于新轮次。
-2. 主代理把 `QA_REVIEW_BINDING` 与 `QA_REVIEW_NONCE` 两行写进子代理 prompt，并附上可复制执行的 seal 命令与宿主名。审查子代理必须能写文件、能执行命令；只读探索型代理（如 Kimi Code 的 `explore` profile）不能担任审查者。
-3. 子代理把最终审查内容直接写入原文文件，再按轴 seal：r1 用 `--axis standards|spec --file review/r1-… --reviewer-kind subagent --host "<宿主名>"`；r2 起追加 `--pending-ids "<编号,...>"`，把收到的待复核编号原样带入凭据。无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce 运行 `--reviewer-kind external-session`；主代理不得自动启动 `codex exec` 等无头审查者。
-4. `seal` 校验轮次、轴、路径、challenge 与当前审查包一致，拒绝覆盖已有凭据，成功时打印 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`，子代理把这一行放进最终返回。主代理只检查原文与 `.source.json` 是否存在，不转抄、不改写、不重算。
-5. `qa-check review` 输出「来源核验」强度行：找到同 nonce 的 Claude Code 子代理转录且哈希行一致为「转录（强）」；只有自述凭据且内部一致为「自述凭据（弱）」；两者都没有为「未核验（人工）」。凭据缺失、格式错误或自述时间早于 collect 只给 NOTE，哈希矛盾 FAIL，nonce 不符 BLOCKED。强度行不改变 PASS / BLOCKED 语义，弱档不能称来源已核验。
-6. 「自述凭据（弱）」只防跨轮串包与漏执行，不能防恶意主代理自写自封；弱档下人工终审需重点对照 `review/` 原文、分流表与默认驳回清单，或按需用 `/retro` 抽查宿主原生会话。
+1. **collect 只读新鲜度预检**：`collect` 在 `checkSealability` 中核对 `_qa/spec-review-checklist.json` 的 `evidenceTree` 与剔除 `## 交付验证` 后的 `qaPlanDigest`，并要求存在同 `evidenceTree` 的完整 `gate-acceptance-*.log`；仅含合法 `ASSERTION_BLOCKED` 且新鲜的阻塞计划正常放行，`FAIL`/`STALE_EVIDENCE` 或旧产物报 `PACKAGE_INVALID`，不在 `collect` 内重跑 acceptance 覆写 `_qa/`。
+2. **封存与真源认领**：`collect` 把轮次、nonce、treeDigest 与打包时间写入 `_qa/review-challenge.json`。需要显式开新一轮时用 `--round r<n>`；再次 collect 会换 nonce，旧凭据不能用于新轮次。后台或子代理超时时以 `.source.json` 与原文 SHA-256 哈希匹配当前 nonce 作为唯一封存真源认领（`axes` 仅辅助指标），发现已有凭据时禁止重派和手改 `_qa/`。
+3. 主代理把 `QA_REVIEW_BINDING` 与 `QA_REVIEW_NONCE` 两行写进子代理 prompt，并附上可复制执行的 seal 命令与宿主名。审查子代理必须能写文件、能执行命令；只读探索型代理（如 Kimi Code 的 `explore` profile）不能担任审查者。
+4. 子代理把最终审查内容直接写入原文文件，再按轴 seal：r1 用 `--axis standards|spec --file review/r1-… --reviewer-kind subagent --host "<宿主名>"`；r2 起追加 `--pending-ids "<编号,...>"`，把收到的待复核编号原样带入凭据。无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce 运行 `--reviewer-kind external-session`；主代理不得自动启动 `codex exec` 等无头审查者。
+5. `seal` 校验轮次、轴、路径、challenge 与当前审查包一致，拒绝覆盖已有凭据，成功时打印 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`，子代理把这一行放进最终返回。主代理只检查原文与 `.source.json` 是否存在，不转抄、不改写、不重算。
+6. `qa-check review` 输出「来源核验」强度行：找到同 nonce 的 Claude Code 子代理转录且哈希行一致为「转录（强）」；只有自述凭据且内部一致为「自述凭据（弱）」；两者都没有为「未核验（人工）」。凭据缺失、格式错误或自述时间早于 collect 只给 NOTE，哈希矛盾 FAIL，nonce 不符 BLOCKED。强度行不改变 PASS / BLOCKED 语义，弱档不能称来源已核验。
+7. 「自述凭据（弱）」只防跨轮串包与漏执行，不能防恶意主代理自写自封；弱档下人工终审需重点对照 `review/` 原文、分流表与默认驳回清单，或按需用 `/retro` 抽查宿主原生会话。
 
 seal 拒绝覆盖已有凭据，是为了防止主代理「修一下原文再重封」。原文有问题时按真实返回保留并保持待独立审查，或按新轮次重新审查；不要手改 challenge、凭据或原文。
 
@@ -317,7 +318,8 @@ GLOSSARY.md 的改动开工前已存在，与本特性无关。
 | `FIX_UNVERIFIED` | 「已修」行缺验证证据、可靠 `started` 早于缺陷审查返回、日志 exit 非 0，或分流表缺该列 | 针对修复点生成新证据，或写 `静态：<理由>` |
 | `INVALID_DISPOSITION` | 处置状态不在允许值内（如「基本修好」） | 改为已修、未修、修错、改档成立、改档不成立、驳回、转专项之一 |
 | `FINDING_NOT_REREVIEWED` | 轮次轨迹所指的上轮本次修或 S-H/P-M/P-W 改档编号没有出现在对应轴其后一轮原文中 | 增量复审时把这些编号交给对应轴；不要改原文 |
-| `UNRESOLVED_FINDINGS` | 分流表自报未修、修错、改档不成立，或本次修未填 | 已达 `r2` 上限时停在 `WAITING_HUMAN` 交人工裁决（或授权 `--allow-manual-round`） |
+| `UNRESOLVED_FINDINGS` | 分流表自报未修、修错、改档不成立，或本次修未填 | 已达 `r2` 上限时停在 `WAITING_HUMAN` 停手白名单（仅改 `## 交付验证` 与分流状态/裁决/范围说明/`## 双轴分歧对照`），交人工裁决（或授权 `--allow-manual-round`） |
+| `UNREVIEWED_FIX_CLAIM` | 最新轮首次提出且未经后续独立复审的发现被错标「已修」 | 在 `WAITING_HUMAN` 保持未修并交人工裁决，或按授权开启新轮次复核后再标已修 |
 | `SUPERSEDED` | 审查中 live 工作区偏移当轮快照 | 重新 collect 并在双轴全部达终态前冻结输入 |
 | `FINDING_ID_COLLISION` | 跨轮同编号复用不同语义或撞号保留区 | 按 challenge 的 `nextIds` 分配新编号 |
 

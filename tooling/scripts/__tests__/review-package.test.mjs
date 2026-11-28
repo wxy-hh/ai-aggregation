@@ -728,8 +728,34 @@ test('collect 接入 qa-preflight（ERROR 阻断，--skip-preflight 可跳过）
   assert.match(blocked.stdout + blocked.stderr, /PSEUDO_ASSERTION|check\(true\)/);
 
   // 允许应急 --skip-preflight 跳过
+  const { computeQaPlanDigest } = await import(new URL('../qa-spec-review.mjs', import.meta.url).href);
+  const { computeEvidenceTreeDigest, readScope } = await import(new URL('../review-package.mjs', import.meta.url).href);
+  const scope = await readScope(feature);
+  const evidenceTree = await computeEvidenceTreeDigest(dir, scope.scopes);
+  const qaPlanDigest = computeQaPlanDigest(await readFile(path.join(feature, 'qa-plan.md'), 'utf8'));
   await mkdir(path.join(feature, '_qa'), { recursive: true });
-  await writeFile(path.join(feature, '_qa', 'spec-review-checklist.json'), JSON.stringify({ version: 2, rows: [] }));
+  await mkdir(path.join(feature, 'evidence'), { recursive: true });
+  await writeFile(
+    path.join(feature, '_qa', 'spec-review-checklist.json'),
+    JSON.stringify({ version: 2, evidenceTree, qaPlanDigest, rows: [] }),
+  );
+  await writeFile(path.join(feature, 'evidence', 'gate-acceptance-1.log'), [
+    '# qa-run v1',
+    '# label: gate-acceptance-1',
+    `# command: node ${QA_CHECK} acceptance ${feature}`,
+    `# argv: ${JSON.stringify([process.execPath, QA_CHECK, 'acceptance', feature])}`,
+    `# cwd: ${dir}`,
+    '# head: deadbeef',
+    `# tree: ${evidenceTree}`,
+    '# started: 2026-11-28T00:00:00.000Z',
+    '# ---',
+    '结果: PASS',
+    '# ---',
+    '# finished: 2026-11-28T00:00:01.000Z',
+    '# durationMs: 100',
+    '# exit: 0',
+    '',
+  ].join('\n'));
   const skipped = runArgs(dir, ['collect', feature, '--skip-preflight']);
   assert.equal(skipped.status, 0, skipped.stderr + skipped.stdout);
   const manifest = JSON.parse(await readFile(path.join(feature, '_qa', 'review-package.json'), 'utf8'));
@@ -863,4 +889,198 @@ test('TC06-2 seal 与 qa-check 使用同一复审响应语义', async (t) => {
   const missing = referencedReport.issues.find((item) => item.code === 'FINDING_NOT_REREVIEWED');
   assert.ok(missing, JSON.stringify(referencedReport.issues));
   assert.match(missing.message, /S-H1/);
+});
+
+const QA_CHECK = fileURLToPath(new URL('../qa-check.mjs', import.meta.url));
+const QA_RUN = fileURLToPath(new URL('../qa-run.mjs', import.meta.url));
+
+/** 创建含完整 spec/qa-plan/tests 的仓库并运行一次真实 acceptance 门禁 */
+async function freshAcceptanceRepo(t, { assertionBlocked = false } = {}) {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await writeFile(path.join(dir, 'tracked.txt'), 'export const value = 1;\n');
+  git(dir, ['add', 'tracked.txt']);
+  git(dir, ['commit', '--quiet', '-m', '基线源码']);
+  await mkdir(path.join(dir, 'tests'), { recursive: true });
+  await writeFile(
+    path.join(dir, 'tests', 'app.test.mjs'),
+    "import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('断言甲', () => assert.equal(1, 1));\n",
+  );
+  git(dir, ['add', 'tests/app.test.mjs']);
+  git(dir, ['commit', '--quiet', '-m', '基线测试']);
+
+  await writeFile(path.join(feature, 'spec.md'), '## User Stories\n1. 核心断言\n\n## 交付命令\n```bash\nnode --version\n```\n');
+  const buildQaPlan = (rowLine) => [
+    'QA Schema: 4',
+    'QA Mode: inline',
+    'QA Review Coverage: 2',
+    '### TC01: 示例场景',
+    '- Priority: P1',
+    '- Covers: 1',
+    '- Seam: unit',
+    '#### 验证断言',
+    '1. 核心断言甲通过',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    rowLine,
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `node --version` | 待执行 |',
+  ].join('\n');
+
+  await writeFile(path.join(feature, 'qa-plan.md'), buildQaPlan('| TC01 | 1 | BLOCKED | 尚未执行 | | |'));
+  assert.equal(run(dir, 'init', feature, ['tracked.txt', 'tests/app.test.mjs']).status, 0);
+
+  if (!assertionBlocked) {
+    const unitRun = spawnSync(process.execPath, [QA_RUN, feature, 'unit-1', '--', process.execPath, '--test', 'tests/app.test.mjs'], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+    assert.equal(unitRun.status, 0, unitRun.stderr);
+    await writeFile(
+      path.join(feature, 'qa-plan.md'),
+      buildQaPlan('| TC01 | 1 | PASS | `evidence/unit-1.log` | `tests/app.test.mjs` › 断言甲 | |'),
+    );
+  }
+
+  const gateAcc = spawnSync(process.execPath, [QA_RUN, feature, 'gate-acceptance-1', '--', process.execPath, QA_CHECK, 'acceptance', feature], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  assert.equal(gateAcc.status, assertionBlocked ? 1 : 0, gateAcc.stderr + gateAcc.stdout);
+  return { dir, feature, buildQaPlan };
+}
+
+test('S2-TC02-1 清单缺少 evidenceTree 或 qaPlanDigest 时 collect 2 秒内报 PACKAGE_INVALID', async (t) => {
+  const { dir, feature } = await freshAcceptanceRepo(t);
+  const checklistPath = path.join(feature, '_qa', 'spec-review-checklist.json');
+  const checklist = JSON.parse(await readFile(checklistPath, 'utf8'));
+  delete checklist.evidenceTree;
+  await writeFile(checklistPath, `${JSON.stringify(checklist, null, 2)}\n`);
+
+  const startedAt = Date.now();
+  const missingTree = runArgs(dir, ['collect', feature]);
+  assert.equal(missingTree.status, 1);
+  assert.ok(Date.now() - startedAt < 2000);
+  assert.match(missingTree.stderr, /PACKAGE_INVALID/);
+
+  const checklistNoPlan = JSON.parse(await readFile(checklistPath, 'utf8'));
+  checklistNoPlan.evidenceTree = 'a'.repeat(64);
+  delete checklistNoPlan.qaPlanDigest;
+  await writeFile(checklistPath, `${JSON.stringify(checklistNoPlan, null, 2)}\n`);
+  const missingPlanDigest = runArgs(dir, ['collect', feature]);
+  assert.equal(missingPlanDigest.status, 1);
+  assert.match(missingPlanDigest.stderr, /PACKAGE_INVALID/);
+});
+
+test('S2-TC02-2 代码树或非交付验证段落修改后未重跑验收时 collect 报 PACKAGE_INVALID 且不落包', async (t) => {
+  const codeCase = await freshAcceptanceRepo(t);
+  await writeFile(path.join(codeCase.dir, 'tracked.txt'), 'export const value = 2;\n');
+  const t0 = Date.now();
+  const staleCode = runArgs(codeCase.dir, ['collect', codeCase.feature]);
+  assert.equal(staleCode.status, 1);
+  assert.ok(Date.now() - t0 < 2000);
+  assert.match(staleCode.stderr, /PACKAGE_INVALID/);
+  assert.equal(await readFile(path.join(codeCase.feature, '_qa', 'review-package.json'), 'utf8').catch(() => null), null);
+  assert.equal(await readFile(path.join(codeCase.feature, '_qa', 'review-challenge.json'), 'utf8').catch(() => null), null);
+
+  const planCase = await freshAcceptanceRepo(t);
+  const planPath = path.join(planCase.feature, 'qa-plan.md');
+  const updatedPlan = (await readFile(planPath, 'utf8')).replace('| |', '| 手改备注未重跑验收 |');
+  await writeFile(planPath, updatedPlan);
+  const t1 = Date.now();
+  const stalePlan = runArgs(planCase.dir, ['collect', planCase.feature]);
+  assert.equal(stalePlan.status, 1);
+  assert.ok(Date.now() - t1 < 2000);
+  assert.match(stalePlan.stderr, /PACKAGE_INVALID/);
+});
+
+test('S2-TC02-3 仅回填 qa-plan 的交付验证段落时 collect 正常通过', async (t) => {
+  const { dir, feature } = await freshAcceptanceRepo(t);
+  const planPath = path.join(feature, 'qa-plan.md');
+  await writeFile(planPath, (await readFile(planPath, 'utf8')).replace('待执行', '`evidence/delivery.log`'));
+  const okCollect = runArgs(dir, ['collect', feature]);
+  assert.equal(okCollect.status, 0, okCollect.stderr + okCollect.stdout);
+});
+
+test('S2-TC03-1 合法 ASSERTION_BLOCKED 且清单与同树验收日志新鲜时 collect 放行', async (t) => {
+  const { dir, feature } = await freshAcceptanceRepo(t, { assertionBlocked: true });
+  const collectedBlocked = runArgs(dir, ['collect', feature]);
+  assert.equal(collectedBlocked.status, 0, collectedBlocked.stderr + collectedBlocked.stdout);
+});
+
+test('S2-TC03-2 合法 ASSERTION_BLOCKED 通过 collect 前后 _qa 三个对账与清单文件逐字节不变', async (t) => {
+  const { dir, feature } = await freshAcceptanceRepo(t, { assertionBlocked: true });
+  const targets = [
+    '_qa/reconciliation.md',
+    '_qa/spec-review-checklist.json',
+    '_qa/spec-review-skeleton.md',
+  ];
+  const before = await Promise.all(targets.map((rel) => readFile(path.join(feature, rel), 'utf8')));
+  const res = runArgs(dir, ['collect', feature]);
+  assert.equal(res.status, 0, res.stderr + res.stdout);
+  const after = await Promise.all(targets.map((rel) => readFile(path.join(feature, rel), 'utf8')));
+  assert.deepEqual(after, before);
+});
+
+test('S2-TC03-3 验收日志为 FAIL 或含 STALE_EVIDENCE 时 collect 仍以 PACKAGE_INVALID 阻断', async (t) => {
+  for (const body of [
+    '[MISSING_EVIDENCE] 缺少日志\n结果: FAIL\n阻塞原因：MISSING_EVIDENCE',
+    '[STALE_EVIDENCE] 证据过期\n结果: BLOCKED\n阻塞原因：ASSERTION_BLOCKED、STALE_EVIDENCE',
+  ]) {
+    const { dir, feature } = await freshAcceptanceRepo(t, { assertionBlocked: true });
+    const gatePath = path.join(feature, 'evidence', 'gate-acceptance-1.log');
+    const gateRaw = await readFile(gatePath, 'utf8');
+    const replaced = gateRaw
+      .replace(/\[ASSERTION_BLOCKED\][\s\S]*?# ---/, `${body}\n# ---`);
+    await writeFile(gatePath, replaced);
+    const blocked = runArgs(dir, ['collect', feature]);
+    assert.equal(blocked.status, 1);
+    assert.match(blocked.stderr, /PACKAGE_INVALID/);
+  }
+
+  // [S-H1] 回归：同一 evidenceTree 上存在早期 PASS 日志时，最新 gate-acceptance-*.log 为 FAIL/STALE_EVIDENCE 仍必须阻断
+  for (const [body, exitCode] of [
+    ['[MISSING_EVIDENCE] 缺少日志\n结果: FAIL\n阻塞原因：MISSING_EVIDENCE', '1'],
+    ['[STALE_EVIDENCE] 证据过期\n结果: BLOCKED\n阻塞原因：ASSERTION_BLOCKED、STALE_EVIDENCE', '1'],
+  ]) {
+    const { dir, feature } = await freshAcceptanceRepo(t);
+    const firstGate = await readFile(path.join(feature, 'evidence', 'gate-acceptance-1.log'), 'utf8');
+    const newerFail = firstGate
+      .replace(/^# label: .+$/m, '# label: gate-acceptance-2')
+      .replace(/^# started: .+$/m, '# started: 2099-01-01T00:00:01.000Z')
+      .replace(/^# finished: .+$/m, '# finished: 2099-01-01T00:00:02.000Z')
+      .replace(/^# exit: \d+$/m, `# exit: ${exitCode}`)
+      .replace(/\n\n[\s\S]*?\n# ---/, `\n\n${body}\n# ---`);
+    await writeFile(path.join(feature, 'evidence', 'gate-acceptance-2.log'), newerFail);
+    const blocked = runArgs(dir, ['collect', feature]);
+    assert.equal(blocked.status, 1);
+    assert.match(blocked.stderr, /PACKAGE_INVALID/);
+
+    // 追加更晚的同树 PASS 日志后恢复放行
+    const newerPass = firstGate
+      .replace(/^# label: .+$/m, '# label: gate-acceptance-3')
+      .replace(/^# started: .+$/m, '# started: 2099-01-01T00:00:03.000Z')
+      .replace(/^# finished: .+$/m, '# finished: 2099-01-01T00:00:04.000Z');
+    await writeFile(path.join(feature, 'evidence', 'gate-acceptance-3.log'), newerPass);
+    const recovered = runArgs(dir, ['collect', feature]);
+    assert.equal(recovered.status, 0, recovered.stderr + recovered.stdout);
+  }
+
+  // 端到端验证：仅破坏 qa-plan 证据引用触发真实 qa-check acceptance 失败时，清单被清除且 collect 阻断
+  const e2e = await freshAcceptanceRepo(t);
+  const planPath = path.join(e2e.feature, 'qa-plan.md');
+  await writeFile(planPath, (await readFile(planPath, 'utf8')).replace('evidence/unit-1.log', 'evidence/missing.log'));
+  const failedGate = spawnSync(
+    process.execPath,
+    [QA_RUN, e2e.feature, 'gate-acceptance-2', '--', process.execPath, QA_CHECK, 'acceptance', e2e.feature],
+    { cwd: e2e.dir, encoding: 'utf8' },
+  );
+  assert.equal(failedGate.status, 1);
+  assert.equal(await readFile(path.join(e2e.feature, '_qa', 'spec-review-checklist.json'), 'utf8').catch(() => null), null);
+  const e2eBlocked = runArgs(e2e.dir, ['collect', e2e.feature]);
+  assert.equal(e2eBlocked.status, 1);
+  assert.match(e2eBlocked.stderr, /PACKAGE_INVALID/);
 });

@@ -5,7 +5,10 @@ import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseRunLog } from './qa-spec-review.mjs';
 import { computeEvidenceTreeDigest, readScope, resolveFeature } from './review-package.mjs';
+
+export { parseRunLog };
 
 const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SAFE_ARGUMENT = /^[A-Za-z0-9_./:@%+=,-]+$/;
@@ -70,77 +73,6 @@ export function splitShellWords(input) {
   if (quote) throw new Error('命令中的单引号或双引号未闭合');
   if (started) words.push(word);
   return words;
-}
-
-export function parseRunLog(text) {
-  const lines = text.split(/\r?\n/);
-  if (lines[0] !== '# qa-run v1') return null;
-  const fields = {};
-  let headerEnd = -1;
-  for (let index = 1; index < lines.length; index += 1) {
-    if (lines[index] === '# ---') {
-      headerEnd = index;
-      break;
-    }
-    const match = lines[index].match(/^# ([A-Za-z][A-Za-z0-9]*): (.*)$/);
-    if (match) fields[match[1]] = match[2];
-  }
-
-  let argv = null;
-  try {
-    const parsed = JSON.parse(fields.argv ?? '');
-    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) argv = parsed;
-  } catch {
-    argv = null;
-  }
-
-  let end = lines.length;
-  while (end > 0 && lines[end - 1] === '') end -= 1;
-  let tailStart = -1;
-  for (let index = end - 1; index > headerEnd; index -= 1) {
-    if (lines[index] === '# ---') {
-      tailStart = index;
-      break;
-    }
-  }
-  const tail = {};
-  if (tailStart > headerEnd) {
-    for (const line of lines.slice(tailStart + 1, end)) {
-      const match = line.match(/^# ([A-Za-z][A-Za-z0-9]*): (.*)$/);
-      if (match) tail[match[1]] = match[2];
-    }
-  }
-  const finished = tail.finished ?? null;
-  const exit = tail.exit === undefined ? null : /^\d+$/.test(tail.exit) ? Number(tail.exit) : tail.exit;
-  const complete = headerEnd > 0 && argv !== null && finished !== null && exit !== null;
-  const durationMs = Number(tail.durationMs);
-  const repairAndWaitMs = Number(tail.repairAndWaitMs);
-  return {
-    label: fields.label ?? null,
-    command: fields.command ?? null,
-    argv,
-    executor: fields.executor ?? null,
-    script: fields.script ?? null,
-    cwd: fields.cwd ?? null,
-    head: fields.head ?? null,
-    node: fields.node ?? null,
-    tree: fields.tree ?? null,
-    nonce: fields.nonce ?? null,
-    round: fields.round ?? null,
-    axis: fields.axis ?? null,
-    snapshotHash: fields.snapshotHash ?? null,
-    started: fields.started ?? null,
-    finished,
-    dispatchedAt: null,
-    terminalState: tail.terminalState ?? null,
-    errorClass: tail.errorClass === 'none' ? null : tail.errorClass ?? null,
-    durationMs: Number.isInteger(durationMs) && durationMs >= 0 ? durationMs : null,
-    repairAndWaitMs: Number.isInteger(repairAndWaitMs) && repairAndWaitMs >= 0 ? repairAndWaitMs : null,
-    exit,
-    complete,
-    // 命令输出正文（不含头尾），供断言标记核对
-    body: lines.slice(headerEnd > 0 ? headerEnd + 1 : lines.length, tailStart > headerEnd ? tailStart : end).join('\n'),
-  };
 }
 
 function headAt(root) {

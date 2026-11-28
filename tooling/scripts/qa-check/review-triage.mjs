@@ -154,7 +154,7 @@ async function rawIndex(featureDir, rounds) {
       }
     }
   }
-  return { last, collisions };
+  return { last, collisions, firstRound: firstRoundById };
 }
 
 function rereviewTarget(row) {
@@ -305,8 +305,24 @@ async function reviewRawIssues(featureDir, triage) {
       'collect 后用 Skill 工具调用 code-review 做增量复审，复审输入须列出这些编号；S-* 由 Standards 轴、P-* 由 Spec 轴复核。格式问题不得成为修改原文的理由。',
     ));
   }
-  const unresolvedRows = rows
+  const unreviewedFixRows = latest === null
+    ? []
+    : rows.filter((row) => /^已修/.test(row.final) && index.firstRound.get(row.id)?.round === latest);
+  if (unreviewedFixRows.length) {
+    issues.push(issue(
+      'UNREVIEWED_FIX_CLAIM',
+      'BLOCKED',
+      `最新轮次（r${latest}）首次提出且未经后续独立复审的发现不得标为「已修」：${unreviewedFixRows.map((row) => row.id).join('、')}。`,
+      '在 WAITING_HUMAN 收口或待复审状态保持未修并交人工裁决，或按人工授权开启新轮次由独立审查者复核后再标已修。',
+    ));
+  }
+  const baseUnresolvedRows = rows
     .filter((row) => (row.tier === '本次修' && (!row.final || row.final === '—')) || /^(未修|修错|改档不成立)$/.test(row.final));
+  const seenUnresolved = new Set(baseUnresolvedRows.map((row) => row.id));
+  const unresolvedRows = [
+    ...baseUnresolvedRows,
+    ...unreviewedFixRows.filter((row) => !seenUnresolved.has(row.id)),
+  ];
   const unresolved = unresolvedRows.map((row) => `${row.id}（${row.final && row.final !== '—' ? row.final : '未填'}）`);
   if (unresolved.length) {
     issues.push(issue(
@@ -388,6 +404,38 @@ function declaredReviewHost(reportText) {
   const name = method.match(/宿主=([^；;]*)/)?.[1]?.trim();
   if (!name) return null;
   return { name, claude: /^claude code$/i.test(name) };
+}
+
+/** 解析 review-report.md 中的 ## 双轴分歧对照 表格，供人工决策包并列呈现 */
+function parseAxisConflicts(reportText) {
+  const body = markdownSection(reportText, /^## 双轴分歧对照\s*$/);
+  if (!body || !body.trim()) return [];
+  const lines = body.split(/\r?\n/);
+  const items = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].includes('|')) continue;
+    const headers = splitMarkdownRow(lines[index]);
+    const topicIndex = headers.findIndex((cell) => /编号|议题/.test(cell));
+    const standardsIndex = headers.findIndex((cell) => /Standards/i.test(cell));
+    const specIndex = headers.findIndex((cell) => /Spec/i.test(cell));
+    if (topicIndex < 0 || standardsIndex < 0 || specIndex < 0) continue;
+    const questionIndex = headers.findIndex((cell) => /裁决|问题/.test(cell));
+    for (let rowIndex = index + 1; rowIndex < lines.length && lines[rowIndex].includes('|'); rowIndex += 1) {
+      const cells = splitMarkdownRow(lines[rowIndex]);
+      if (cells.every((cell) => /^:?-{3,}:?$/.test(cell.replaceAll(' ', '')))) continue;
+      const cell = (pos) => (pos >= 0 ? cells[pos]?.trim() ?? '' : '');
+      const topic = cell(topicIndex);
+      if (!topic) continue;
+      items.push({
+        topic,
+        standards: cell(standardsIndex),
+        spec: cell(specIndex),
+        question: cell(questionIndex),
+      });
+    }
+    break;
+  }
+  return items;
 }
 
 function reviewReportIssues(reportText, triage) {
@@ -708,16 +756,24 @@ export async function checkReview(featureDir, plan, context, earlier) {
       pauseState = 'WAITING_INFRA';
     } else if (
       raw.latestRoundNum !== null && raw.latestRoundNum >= 2
-      && (issueCodes.has('UNRESOLVED_FINDINGS') || issueCodes.has('FINDING_NOT_REREVIEWED') || raw.latestRoundNum > 2)
+      && (issueCodes.has('UNRESOLVED_FINDINGS')
+        || issueCodes.has('FINDING_NOT_REREVIEWED')
+        || issueCodes.has('UNREVIEWED_FIX_CLAIM')
+        || raw.latestRoundNum > 2)
     ) {
       const resolvedFeatureDir = await realpath(featureDir).catch(() => path.resolve(featureDir));
       const featureRel = context.root
         ? path.relative(context.root, resolvedFeatureDir).split(path.sep).join('/')
         : `.scratch/${path.basename(featureDir)}`;
+      const conflicts = reportText ? parseAxisConflicts(reportText) : [];
       pauseState = 'WAITING_HUMAN';
       decisionPack = {
         round: `r${raw.latestRoundNum}`,
-        unresolved: raw.unresolvedRows.map((row) => `${row.id}（${row.tier || '未定档'} / ${row.final || '未填'} / ${row.trajectory || '无轨迹'}）`),
+        unresolved: raw.unresolvedRows.map((row) => {
+          const loc = raw.index?.last.get(row.id)?.location;
+          return `${row.id}（${row.tier || '未定档'} / ${row.final || '未填'} / ${row.trajectory || '无轨迹'}${loc ? ` @ ${loc}` : ''}）`;
+        }),
+        ...(conflicts.length ? { conflicts } : {}),
         nextCommand: `node tooling/scripts/review-package.mjs collect ${featureRel} --allow-manual-round`,
       };
     } else if (

@@ -713,3 +713,117 @@ test('TC03-2 混合变更骨架真实首次 seal 成功', async (t) => {
   const challenge = JSON.parse(await readFile(path.join(feature, '_qa/review-challenge.json'), 'utf8'));
   assert.equal(challenge.axes.spec.sealAttempts, 1);
 });
+
+test('S2-TC01-1 specReviewChecklistDocument 与 parseSpecReviewChecklist 保留并校验 evidenceTree 和 qaPlanDigest', async () => {
+  const {
+    specReviewChecklistDocument,
+    parseSpecReviewChecklist,
+  } = await import('../qa-spec-review.mjs');
+
+  const rows = [{
+    id: 'TC01-1',
+    status: 'PASS',
+    assertion: '断言内容',
+    actual: '实测结果',
+    seam: 'unit',
+    sourceCandidates: ['tests/a.test.mjs'],
+    changed: false,
+    priority: 'P1',
+    required: false,
+  }];
+  const evidenceTree = 'a'.repeat(64);
+  const qaPlanDigest = 'b'.repeat(64);
+
+  for (const version of [1, 2]) {
+    const raw = specReviewChecklistDocument(rows, { version, evidenceTree, qaPlanDigest });
+    const parsed = parseSpecReviewChecklist(raw);
+    assert.equal(parsed.version, version);
+    assert.equal(parsed.evidenceTree, evidenceTree);
+    assert.equal(parsed.qaPlanDigest, qaPlanDigest);
+  }
+
+  assert.throws(
+    () => parseSpecReviewChecklist(JSON.stringify({ version: 2, rows: [], evidenceTree: 123 })),
+    /evidenceTree/,
+  );
+  assert.throws(
+    () => parseSpecReviewChecklist(JSON.stringify({ version: 2, rows: [], qaPlanDigest: '' })),
+    /qaPlanDigest/,
+  );
+});
+
+test('S2-TC01-2 computeQaPlanDigest 仅对非交付验证段落变更敏感，回填交付验证保持一致', async () => {
+  const { computeQaPlanDigest } = await import('../qa-spec-review.mjs');
+  const basePlan = [
+    'QA Schema: 4',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| TC01 | 1 | PASS | `evidence/a.log` | `tests/a.test.mjs` › 用例1 | |',
+    '',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `pnpm test` | 待执行 |',
+  ].join('\n');
+
+  const deliveryUpdated = basePlan.replace('待执行', '`evidence/delivery.log`');
+  const executionUpdated = basePlan.replace('`evidence/a.log`', '`evidence/b.log`');
+
+  assert.equal(computeQaPlanDigest(deliveryUpdated), computeQaPlanDigest(basePlan));
+  assert.notEqual(computeQaPlanDigest(executionUpdated), computeQaPlanDigest(basePlan));
+});
+
+test('S2-TC01-3 isFreshAcceptanceGateLog 区分 PASS、合法 ASSERTION_BLOCKED 与旧树/FAIL/STALE_EVIDENCE', async () => {
+  const { isFreshAcceptanceGateLog, parseRunLog } = await import('../qa-spec-review.mjs');
+  const tree = 'f'.repeat(64);
+  const buildGateLog = ({ exit = 0, logTree = tree, body = '结果: PASS' } = {}) => parseRunLog([
+    '# qa-run v1',
+    '# label: gate-acceptance-1',
+    '# command: node tooling/scripts/qa-check.mjs acceptance .scratch/demo',
+    '# argv: ["node","tooling/scripts/qa-check.mjs","acceptance",".scratch/demo"]',
+    '# cwd: /tmp/repo',
+    '# head: deadbeef',
+    `# tree: ${logTree}`,
+    '# started: 2026-11-28T00:00:00.000Z',
+    '# ---',
+    body,
+    '# ---',
+    '# finished: 2026-11-28T00:00:01.000Z',
+    '# durationMs: 1000',
+    `# exit: ${exit}`,
+  ].join('\n'));
+
+  assert.equal(isFreshAcceptanceGateLog(buildGateLog({ exit: 0, body: '结果: PASS' }), tree), true);
+  assert.equal(
+    isFreshAcceptanceGateLog(
+      buildGateLog({
+        exit: 1,
+        body: '[ASSERTION_BLOCKED] TC01 / 1 阻塞：尚未完成\n结果: BLOCKED\n阻塞原因：ASSERTION_BLOCKED',
+      }),
+      tree,
+    ),
+    true,
+  );
+  assert.equal(isFreshAcceptanceGateLog(buildGateLog({ exit: 0, logTree: '0'.repeat(64) }), tree), false);
+  assert.equal(
+    isFreshAcceptanceGateLog(
+      buildGateLog({
+        exit: 1,
+        body: '[STALE_EVIDENCE] TC01 过期\n结果: BLOCKED\n阻塞原因：ASSERTION_BLOCKED、STALE_EVIDENCE',
+      }),
+      tree,
+    ),
+    false,
+  );
+  assert.equal(
+    isFreshAcceptanceGateLog(
+      buildGateLog({
+        exit: 1,
+        body: '[MISSING_EVIDENCE] 缺少日志\n结果: FAIL\n阻塞原因：MISSING_EVIDENCE',
+      }),
+      tree,
+    ),
+    false,
+  );
+});
