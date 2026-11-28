@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## 1. 固化范围、基线与冻结计划
 
-- 阅读 spec、工单依赖和 `docs/agents/qa-workflow.md`，先查看 `git status`，区分既有改动与本任务改动。
+- 阅读 spec、工单依赖和 `docs/agents/qa-workflow.md`，先查看 `git status`，区分既有改动与本任务改动；阶段 3B 基线默认只读、一次聚合汇报：无关既有红标注为既有失败后继续，确需修改 git tracked 文件时离开本特性另起任务，不改变 tracked 文件的本机环境恢复（如 `pnpm install --offline`）经一次明确确认后可就地执行；推进过程中状态变化只写一行中文。
 - 已有 `_qa/scope.json`（规划收口时已 init）时不再 init；没有时在改第一行代码前执行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>`，固化 HEAD、开工前内容和 `_qa/prechange/qa-plan.md`。禁止重复 init 或手改 `_qa/`。
 - 阶段 1–2 产物和流程工具修复需要纳入时，执行 `node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>`，以 base 为前值扩大范围，不修改 Git index。
 - 禁止为实现自动切换分支或提交代码。

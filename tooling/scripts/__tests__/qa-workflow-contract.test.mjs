@@ -1248,3 +1248,153 @@ test('S2-TC05-2 工作流正本指南技能与说明同步新鲜度预检 WAITIN
     assert.match(readme, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 });
+
+test('S3-TC01-1 基线默认只读、一次聚合汇报与 tracked/本机环境分界（保留车道升级红灯规则）', async () => {
+  const targets = [
+    paths.workflow,
+    paths.workflowTemplate,
+    paths.qaPlanner,
+    paths.implement,
+    customizationsPath,
+    paths.guide,
+  ];
+  for (const file of targets) {
+    const content = await read(file);
+    assert.match(content, /默认只读/, file);
+    assert.match(content, /一次聚合汇报/, file);
+    assert.match(content, /tracked/, file);
+    assert.match(content, /本机环境恢复/, file);
+    assert.match(content, /一次(?:明确)?确认/, file);
+  }
+  for (const file of [paths.workflow, paths.workflowTemplate, paths.guide]) {
+    assert.match(await read(file), /baseline-upgrade-\*[^\n]*基线红灯先问用户/, file);
+  }
+});
+
+test('S3-TC02-1 测试使用生产不存在事件或形状导致假绿定级为 P-W 或 S-H 且不得归作 S-J', async () => {
+  const targets = [
+    '.claude/skills/code-review/SKILL.md',
+    customizationsPath,
+    paths.workflow,
+    paths.workflowTemplate,
+    paths.guide,
+  ];
+  for (const file of targets) {
+    const content = await read(file);
+    assert.match(content, /生产不存在[^\n]*(?:事件|形状)/, file);
+    assert.match(content, /假绿/, file);
+    assert.match(content, /不得归作\s*`?S-J`?/, file);
+    assert.match(content, /P-W.*S-H|S-H.*P-W/, file);
+  }
+});
+
+test('S3-TC02-2 测试夹具优先共享强类型契约与有出处生产形状样本，不跨 app 强引内部构造器且不泛化要求低风险测试走真实工厂', async () => {
+  const targets = [
+    '.claude/skills/code-review/SKILL.md',
+    customizationsPath,
+    paths.qaPlanner,
+    paths.workflow,
+    paths.workflowTemplate,
+    paths.guide,
+  ];
+  for (const file of targets) {
+    const content = await read(file);
+    assert.match(content, /共享强类型契约/, file);
+    assert.match(content, /有出处的生产形状样本/, file);
+    assert.match(content, /不跨 app 强引[^\n]*构造器/, file);
+    assert.match(content, /不(?:规定|泛化)[^\n]*低风险测试[^\n]*真实工厂/, file);
+  }
+});
+
+test('S3-TC03-1 保留 grilling 一次一问协议且选项涉及生产事件持久化公共契约时先读实现再问人', async () => {
+  const grilling = await read('.claude/skills/grilling/SKILL.md');
+  assert.match(grilling, /Ask the questions one at a time, waiting for feedback on each question before continuing\./);
+  assert.doesNotMatch(grilling, /合并多题/);
+  const targets = [paths.grill, paths.workflow, paths.workflowTemplate, paths.guide];
+  for (const file of targets) {
+    const content = await read(file);
+    assert.match(content, /一次一问/, file);
+    assert.match(content, /不合并多题/, file);
+    assert.match(content, /先读(?:对应)?实现再问人|先查阅对应实现[^\n]*再向用户提问/, file);
+    assert.match(content, /生产事件/, file);
+    assert.match(content, /持久化/, file);
+    assert.match(content, /公共契约/, file);
+  }
+});
+
+test('S3-TC03-2 to-spec 与工作流明确删除实现步骤型 US，qa-test-planner 与工作流要求 init 前检查断言互斥与可证伪', async () => {
+  for (const file of [paths.toSpec, customizationsPath, paths.workflow, paths.workflowTemplate]) {
+    assert.match(await read(file), /删除实现步骤型/, file);
+  }
+  for (const file of [paths.qaPlanner, paths.workflow, paths.workflowTemplate]) {
+    const content = await read(file);
+    assert.match(content, /互相矛盾/, file);
+    assert.match(content, /可证伪/, file);
+  }
+});
+
+test('S3-TC04-1 工作流技能与指南控制单批审查交付面不一次性捆审多个高风险独立主题', async () => {
+  for (const file of [paths.workflow, paths.workflowTemplate, paths.toSpec, customizationsPath, paths.guide]) {
+    const content = await read(file);
+    assert.match(content, /单批审查交付面/, file);
+    assert.match(content, /不[^\n]*(?:一次性)?捆(?:绑)?审[^\n]*高风险独立主题/, file);
+  }
+});
+
+test('S3-TC04-2 prompt-shortcuts 与工作流限定 Advisor 仅在设计冻结前找核心反例且截断不可用额度耗尽不自动重取', async () => {
+  const targets = [
+    'docs/agents/prompt-shortcuts.md',
+    '.claude/skills/setup-qa-workflow/templates/prompt-shortcuts.md',
+    paths.workflow,
+    paths.workflowTemplate,
+    paths.guide,
+  ];
+  for (const file of targets) {
+    const content = await read(file);
+    assert.match(content, /Advisor/, file);
+    assert.match(content, /设计冻结前/, file);
+    assert.match(content, /核心反例/, file);
+    assert.match(content, /截断[^\n]*不可用[^\n]*额度耗尽[^\n]*不自动(?:重试|重取)/, file);
+  }
+});
+
+test('S3-TC04-3 CLAUDE 根规则模板工作流与实现技能收口状态变化只写一行中文且 CLAUDE 不超 65 行', async () => {
+  const root = await read(paths.root);
+  assert.ok(root.trim().split('\n').length <= 65);
+  const targets = [
+    paths.root,
+    paths.claudeTemplate,
+    paths.workflow,
+    paths.workflowTemplate,
+    paths.implement,
+    customizationsPath,
+    paths.guide,
+  ];
+  for (const file of targets) {
+    assert.match(await read(file), /状态变化[^\n]*只写一行中文/, file);
+  }
+});
+
+test('S3-TC05-1 步骤 3 修改的安装模板不含本仓私货且保留模板专有占位符与段落', async () => {
+  const [directive, workflowTpl, shortcutsTpl, customTpl] = await Promise.all([
+    read(paths.claudeTemplate),
+    read(paths.workflowTemplate),
+    read('.claude/skills/setup-qa-workflow/templates/prompt-shortcuts.md'),
+    read(customizationsPath),
+  ]);
+  for (const content of [directive, workflowTpl, shortcutsTpl, customTpl]) {
+    assert.doesNotMatch(content, /@repo\/web|test_user|AI 聚合平台|pnpm (?:qa:|dev:probe|test:tooling)/);
+  }
+  for (const token of ['{DEV_COMMAND}', '{WEB_PORT}', '{E2E_COMMAND}', '{TEST_COMMAND}']) {
+    assert.match(workflowTpl, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(workflowTpl, /默认只读/);
+  assert.match(workflowTpl, /不得归作\s*`?S-J`?/);
+  assert.match(shortcutsTpl, /### 批量冲刺/);
+  assert.match(shortcutsTpl, /Advisor/);
+  assert.match(directive, /\{CORE_LINKS\}/);
+  assert.match(directive, /状态变化[^\n]*只写一行中文/);
+  assert.match(customTpl, /\{CORE_LINKS\}/);
+  assert.match(customTpl, /删除实现步骤型/);
+  assert.match(customTpl, /共享强类型契约/);
+});
